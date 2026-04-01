@@ -1,0 +1,81 @@
+.weighbridge-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  width: 100%;
+}
+
+/* Minimal Weight Display */
+.weight-display-panel {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 0.25rem;
+}
+
+.display-housing {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.digital-display {
+  background: transparent;
+  min-width: 260px;
+  text-align: center;
+}
+
+.display-label {
+  color: #aaaaaa;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 0.25rem;
+}
+
+.weight-value {
+  color: #00ff00;
+  font-size: 2.25rem;
+  font-weight: 800;
+  font-family: 'Courier New', monospace;
+  letter-spacing: 2px;
+  margin-bottom: 0.25rem;
+}
+
+.unit { font-size: 0.9rem; color:#00cc00; }
+
+.status-indicator { color: #ffbb00; font-weight:700; font-size:0.75rem }
+
+/* Simple flat platform with only yellow edges */
+.weighbridge-platform-simple {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.weighbridge-platform-simple .edge {
+  width: 48px;
+  height: 80px;
+  background: repeating-linear-gradient(135deg, #ffcc00 0 12px, #000 12px 24px);
+}
+
+.weighbridge-platform-simple .platform-surface-simple {
+  flex: 1 1 auto;
+  height: 80px;
+  background: #6b6b6b; /* flat grey */
+  border-radius: 2px;
+}
+
+/* Ensure truck stopping point lines up with center of this component */
+.weighbridge-platform-simple { position: relative }
+
+@media (max-width: 768px) {
+  .weighbridge-platform-simple .edge { width: 36px; height: 56px }
+  .weighbridge-platform-simple .platform-surface-simple { height: 56px }
+  .weight-value { font-size: 1.5rem }
+}
+

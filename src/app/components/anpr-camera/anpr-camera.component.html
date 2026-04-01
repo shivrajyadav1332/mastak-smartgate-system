@@ -1,0 +1,38 @@
+<div class="anpr-camera-container">
+  <div class="camera-housing">
+    <div class="camera-body">
+      <div class="camera-lens-assembly">
+        <div class="lens-ring"></div>
+        <div class="lens-glass"></div>
+        <div class="ir-illuminator" [class.active]="active"></div>
+      </div>
+      
+      @if (active) {
+        <div class="status-indicator active"></div>
+      } @else {
+        <div class="status-indicator"></div>
+      }
+    </div>
+    
+    <div class="mounting-bracket"></div>
+  </div>
+
+  @if (active && detectedPlate) {
+    <div class="plate-display">
+      <div class="plate-header">
+        <span class="plate-label">DETECTED PLATE</span>
+        <span class="confidence-value" [style.color]="getConfidenceColor()">{{ confidence | number:'1.0-1' }}%</span>
+      </div>
+      <div class="plate-number">
+        {{ detectedPlate }}
+      </div>
+      <div class="confidence-bar">
+        <div class="confidence-fill" [style.width]="getConfidenceWidth()" [style.background]="getConfidenceColor()"></div>
+      </div>
+    </div>
+  }
+
+  @if (label) {
+    <div class="anpr-label">{{ label }}</div>
+  }
+</div>

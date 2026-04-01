@@ -1,0 +1,19 @@
+<div class="weighbridge-container">
+  <!-- Minimal Digital Weight Display (keeps alignment) -->
+  <div class="weight-display-panel">
+    <div class="display-housing">
+      <div class="digital-display" [class.active]="active">
+        <div class="display-label">WEIGHT INDICATOR</div>
+        <div class="weight-value">{{ formatWeight() }} <span class="unit">kg</span></div>
+        <div class="status-indicator">{{ getStatusText() }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Simple flat platform with yellow edges only -->
+  <div class="weighbridge-platform-simple" [class.vehicle-present]="vehicleDetected">
+    <div class="edge left-edge" aria-hidden="true"></div>
+    <div class="platform-surface-simple" aria-hidden="true"></div>
+    <div class="edge right-edge" aria-hidden="true"></div>
+  </div>
+</div>

@@ -1,0 +1,193 @@
+<div class="dashboard-container">
+  <app-header></app-header>
+
+  <main class="scada-main">
+    <div class="scada-layout">
+      <!-- Entry Gate Section (Left) -->
+      <div class="entry-section">
+        <div class="signal-wrapper">
+          <span class="label">Entry Signal</span>
+          <app-signal
+            [state]="scadaService.entrySignal().state"
+            [blinking]="scadaService.entrySignal().blinking ?? false">
+          </app-signal>
+        </div>
+
+        <div class="anpr-wrapper">
+          <div class="anpr-pole">
+            <div class="camera-box">ANPR</div>
+          </div>
+        </div>
+
+        <div class="barrier-wrapper">
+          <app-barrier
+            [state]="scadaService.entryBarrier().state"
+            [position]="scadaService.entryBarrier().position ?? 0">
+          </app-barrier>
+          <span class="barrier-status">Boom Barrier (Entry): {{ scadaService.entryBarrier().state === BarrierState.CLOSED ? 'Closed' : 'Open' }}</span>
+
+          <div style="margin-top:0.75rem; display:flex; gap:0.5rem;">
+            <button (click)="openEntryBarrier()">OPEN BARRIER</button>
+            <button (click)="closeEntryBarrier()">CLOSE BARRIER</button>
+            <button (click)="triggerEntryDetection()">ANPR</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Center Section -->
+      <div class="center-section">
+        <div class="control-building">
+          <div class="pole-mount">
+            <div class="pole"></div>
+            <div class="overview-camera">
+              <div class="red-dot"></div>
+            </div>
+            <span class="camera-label">Overview camera</span>
+          </div>
+
+          <div class="building-body">
+            <div class="window"></div>
+            <div class="door"></div>
+          </div>
+        </div>
+
+        <div class="pa-status">
+          <span>{{ scadaService.paSystem().message }}</span>
+        </div>
+
+        <div class="led-display">
+          <span class="led-text">{{ scadaService.ledDisplay().message }}</span>
+        </div>
+
+        <div style="margin-top:0.5rem; display:flex; gap:1rem; align-items:center;">
+          <div style="padding:0.4rem 0.6rem; border-radius:4px; color:#fff; font-weight:700; text-transform:uppercase;">
+            Mode:
+            <span [ngClass]="{'mode-anpr': scadaService.mode() === 'anpr'}" style="padding:0.25rem 0.5rem; margin-left:0.5rem; border-radius:3px;">
+              {{ scadaService.mode() | uppercase }}
+            </span>
+          </div>
+
+          <div style="flex:1;">
+            <div class="alert-panel" *ngIf="scadaService.getAlertMessage().getValue()">
+              {{ scadaService.getAlertMessage().getValue() }}
+            </div>
+          </div>
+        </div>
+
+        <div class="center-controls">
+          <div style="margin-top:0.75rem; color:#fff; font-weight:600; text-transform:uppercase; width:100%; display:flex; gap:1.5rem;">
+            <div style="flex:1;">
+              <div>Vehicle Status:</div>
+              <div style="margin-top:0.25rem; font-weight:700; color:#ddd;">{{ scadaService.vehicleStatus() }}</div>
+            </div>
+
+            <div style="flex:1;">
+              <strong>Recent Logs</strong>
+              <ul class="recent-logs" style="list-style:none; padding:0; margin:0.5rem 0 0 0; max-height:160px; overflow:auto;">
+                <li *ngFor="let entry of scadaService.getVehicleLogs() | async" class="log-entry">
+                  <span class="log-badge" [ngClass]="{ 'log-processed': entry.status === 'processed', 'log-rejected': entry.status === 'rejected' }">{{ entry.status | uppercase }}</span>
+                  <span class="log-text">{{ entry.time | date:'HH:mm:ss' }} — {{ entry.plate }}{{ entry.weight ? ' — ' + entry.weight + 'kg' : '' }}{{ entry.consignment ? ' — ' + entry.consignment : '' }}</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+          <div *ngIf="false" style="margin-top:1rem; display:flex; gap:1rem; align-items:center;">
+            <div style="display:flex; gap:0.5rem; align-items:center;">
+              <button (click)="toggleAutoMode()">{{ scadaService.isAutoModeActive() ? 'Stop Auto' : 'Start Auto' }}</button>
+              <label style="margin-left:0.5rem; color:#ddd;">Rejection:</label>
+              <input type="range" min="0" max="1" step="0.01" [value]="getRejectionRate()" (input)="setRejectionRate($any($event.target).valueAsNumber)" />
+              <span style="color:#fff; font-weight:700; margin-left:0.5rem;">{{ (getRejectionRate() * 100) | number:'1.0-0' }}%</span>
+            </div>
+            <div style="display:flex; gap:0.5rem; align-items:center;">
+              <input #pollUrl placeholder="Polling URL (http...)" style="width:260px; padding:0.25rem;" />
+              <button (click)="enablePolling(pollUrl.value)">Enable Poll</button>
+              <button (click)="disablePolling()">Disable Poll</button>
+            </div>
+            <div style="display:flex; gap:0.5rem; align-items:center;">
+              <input #wsUrl placeholder="WebSocket URL (ws://...)" style="width:260px; padding:0.25rem;" />
+              <button (click)="enableWebSocket(wsUrl.value)">Enable WS</button>
+              <button (click)="disableWebSocket()">Disable WS</button>
+            </div>
+            <div style="display:flex; gap:0.5rem; align-items:center;">
+              <button (click)="toggleContinuousMode()">{{ scadaService.isContinuousModeActive() ? 'Disable Continuous' : 'Enable Continuous' }}</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Exit Gate Section (Right) -->
+      <div class="exit-section">
+        <div class="signal-wrapper">
+          <span class="label">Exit Signal</span>
+          <app-signal
+            [state]="scadaService.exitSignal().state"
+            [blinking]="scadaService.exitSignal().blinking ?? false">
+          </app-signal>
+        </div>
+
+        <div class="anpr-wrapper">
+          <div class="anpr-pole">
+            <div class="camera-box">ANPR</div>
+          </div>
+        </div>
+
+        <div class="barrier-wrapper">
+          <app-barrier
+            [state]="scadaService.exitBarrier().state"
+            [position]="scadaService.exitBarrier().position ?? 0">
+          </app-barrier>
+          <span class="barrier-status">Boom Barrier (Exit): {{ scadaService.exitBarrier().state === BarrierState.CLOSED ? 'Closed' : 'Open' }}</span>
+
+          <div style="margin-top:0.75rem; display:flex; gap:0.5rem;">
+            <button (click)="openExitBarrier()">OPEN BARRIER</button>
+            <button (click)="closeExitBarrier()">CLOSE BARRIER</button>
+            <button (click)="triggerExitDetection()">ANPR</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Weighbridge / Road Platform (centered between Entry and Exit) -->
+    <div class="weighbridge-row">
+      <div class="road-surface">
+        <div class="pillar left-pillar"></div>
+
+        <!-- Demo truck animation element -->
+             <div *ngIf="scadaService.vehicleStatus() !== VehicleStatus.IDLE || scadaService.weighbridge().vehicleDetected"
+               class="demo-truck"
+             [ngClass]="{
+               'truck-entering': scadaService.vehicleStatus() === VehicleStatus.ARRIVED || scadaService.vehicleStatus() === VehicleStatus.VALIDATED,
+               'truck-positioning': scadaService.vehicleStatus() === VehicleStatus.POSITIONING || scadaService.vehicleStatus() === VehicleStatus.READY || scadaService.vehicleStatus() === VehicleStatus.WEIGHING,
+               'truck-exiting': scadaService.vehicleStatus() === VehicleStatus.EXITED
+             }">
+          <div class="truck-label">Truck</div>
+          <div class="truck-body"></div>
+          <div class="truck-wheels">
+            <div class="wheel rear"></div>
+            <div class="wheel front"></div>
+          </div>
+        </div>
+
+        <div class="road-markings"></div>
+
+        <!-- Weighbridge component centered between barriers -->
+        <div class="weighbridge-center">
+          <app-weighbridge
+            [active]="scadaService.weighbridge().active"
+            [weight]="scadaService.weighbridge().weight"
+            [status]="scadaService.weighbridge().status"
+            [vehicleDetected]="scadaService.weighbridge().vehicleDetected">
+          </app-weighbridge>
+        </div>
+
+        <div class="pillar right-pillar"></div>
+      </div>
+    </div>
+    
+    <!-- Manual controls -->
+    <div style="display:flex; justify-content:center; gap:1rem; margin-top:1.5rem;">
+      <button style="background:#2ecc71;color:#fff;padding:0.6rem 1rem;border-radius:6px;border:none;" (click)="startAutomatedCycle()">SIMULATE VEHICLE ARRIVAL</button>
+      <button style="background:#e67e22;color:#fff;padding:0.6rem 1rem;border-radius:6px;border:none;" (click)="resetWeighbridge()">RESET WEIGHBRIDGE</button>
+    </div>
+  </main>
+</div>

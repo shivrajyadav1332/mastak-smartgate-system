@@ -1,0 +1,628 @@
+.dashboard-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: #0b0b0b;
+  overflow: hidden;
+}
+
+.scada-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 2rem;
+  gap: 2rem;
+  position: relative;
+}
+
+.scada-layout {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr 1fr;
+  grid-template-rows: auto auto;
+  gap: 2rem;
+  align-items: flex-start;
+}
+
+/* Entry Section */
+.entry-section,
+.exit-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.signal-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.label {
+  color: #ffffff;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.anpr-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 1rem 0;
+}
+
+.anpr-pole {
+  width: 40px;
+  height: 80px;
+  background: linear-gradient(180deg, #5a5a5a 0%, #3a3a3a 100%);
+  border: 2px solid #444;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.camera-box {
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.barrier-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.barrier-status {
+  color: #ffffff;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.barrier-controls {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.btn {
+  padding: 0.5rem 1.25rem;
+  border: none;
+  border-radius: 5px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+}
+
+.btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-open {
+  background: linear-gradient(135deg, #00aa00 0%, #008800 100%);
+  color: white;
+  border: 2px solid #00ff00;
+}
+
+.btn-open:hover:not(:disabled) {
+  background: linear-gradient(135deg, #00cc00 0%, #00aa00 100%);
+  box-shadow: 0 0 15px rgba(0, 255, 0, 0.4);
+}
+
+.btn-close {
+  background: linear-gradient(135deg, #aa4400 0%, #883300 100%);
+  color: white;
+  border: 2px solid #ff6600;
+}
+
+.btn-close:hover:not(:disabled) {
+  background: linear-gradient(135deg, #cc5500 0%, #aa4400 100%);
+  box-shadow: 0 0 15px rgba(255, 102, 0, 0.4);
+}
+
+/* Center Section */
+.center-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.control-building {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.pole-mount {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pole {
+  width: 8px;
+  height: 40px;
+  background: #666;
+}
+
+.overview-camera {
+  width: 30px;
+  height: 20px;
+  background: #444;
+  border: 2px solid #555;
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.red-dot {
+  width: 8px;
+  height: 8px;
+  background: #ff0000;
+  border-radius: 50%;
+  box-shadow: 0 0 5px #ff0000;
+}
+
+.camera-label {
+  color: #ffffff;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.building-body {
+  width: 120px;
+  height: 100px;
+  background: linear-gradient(135deg, #5a5a5a 0%, #3a3a3a 100%);
+  border: 2px solid #444;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  padding-bottom: 10px;
+}
+
+.window {
+  width: 40px;
+  height: 40px;
+  background: #2a4a6a;
+  border: 2px solid #666;
+  position: absolute;
+  top: 15px;
+}
+
+.door {
+  width: 30px;
+  height: 50px;
+  background: #3a3a3a;
+  border: 2px solid #555;
+  border-radius: 5px 5px 0 0;
+}
+
+.pa-status {
+  color: #ffffff;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.led-display {
+  width: 300px;
+  height: 50px;
+  background: #0a0a0a;
+  border: 3px solid #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.alert-panel {
+  background: #330000;
+  color: #ffdddd;
+  padding: 0.5rem;
+  border-radius: 4px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.mode-anpr {
+  background: #007700;
+}
+
+.led-text {
+  color: #00ff00;
+  font-size: 1rem;
+  font-weight: bold;
+  font-family: 'Courier New', monospace;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  text-shadow: 0 0 10px #00ff00;
+}
+
+.weighbridge-row {
+  grid-column: 1 / -1;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  /* lift the road so the weighbridge visually aligns with Recent Logs */
+  margin-top: -3.75rem;
+}
+
+.road-surface {
+  width: 90%;
+  max-width: 1400px;
+  height: 160px;
+  --pillar-w: 60px;
+  --pillar-gap: 48px; /* desired spacing between pillar and weighbridge (40-60px recommended) */
+  background: linear-gradient(180deg, #3a3a3a 0%, #2a2a2a 100%);
+  border: 3px solid #555;
+  border-radius: 5px;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.pillar {
+  width: 60px;
+  height: 100%;
+  background: repeating-linear-gradient(
+    45deg,
+    #ffcc00,
+    #ffcc00 20px,
+    #000000 20px,
+    #000000 40px
+  );
+  border: 2px solid #cc9900;
+}
+
+.left-pillar {
+  border-right: 2px solid #cc9900;
+}
+
+.right-pillar {
+  border-left: 2px solid #cc9900;
+}
+
+.road-markings {
+  flex: 1;
+  height: 100%;
+  position: relative;
+}
+
+.road-markings::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 6px;
+  margin-top: -3px;
+  background: linear-gradient(90deg, transparent 0 10px, #ffd700 10px 20px);
+  background-size: 40px 6px;
+  opacity: 0.95;
+  box-shadow: 0 0 8px rgba(0,0,0,0.6);
+  animation: road-move 2s linear infinite;
+}
+
+/* Recent Logs styling */
+.recent-logs .log-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0.25rem;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+}
+
+.log-badge {
+  display: inline-block;
+  min-width: 64px;
+  text-align: center;
+  padding: 0.18rem 0.45rem;
+  border-radius: 12px;
+  font-weight: 800;
+  font-size: 0.7rem;
+  letter-spacing: 1px;
+  color: white;
+}
+
+.log-processed {
+  background: linear-gradient(135deg,#00b050 0%,#008a30 100%);
+  box-shadow: 0 2px 8px rgba(0,176,80,0.15);
+}
+
+.log-rejected {
+  background: linear-gradient(135deg,#d9534f 0%,#c12b2b 100%);
+  box-shadow: 0 2px 8px rgba(217,83,79,0.15);
+}
+
+.log-text {
+  color: #ddd;
+  font-size: 0.85rem;
+}
+
+/* Demo truck animation and styling */
+.demo-truck {
+  position: absolute;
+  top: 55%;
+  left: -20%;
+  transform: translateY(-50%);
+  width: 160px;
+  height: 60px;
+  pointer-events: none;
+  z-index: 30; /* keep below weighbridge */
+}
+
+.demo-truck .truck-label {
+  position: absolute;
+  left: -10px;
+  top: -36px;
+  color: #fff;
+  font-size: 1.25rem;
+  font-weight: 600;
+  text-shadow: 0 0 6px rgba(0,0,0,0.8);
+  pointer-events: none;
+}
+
+.demo-truck .truck-body {
+  width: 120px;
+  height: 40px;
+  background: linear-gradient(135deg, #4a6fa5 0%, #2a4a7a 100%);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+  position: absolute;
+  left: 20px;
+  top: 6px;
+}
+
+.demo-truck .truck-wheels {
+  position: absolute;
+  bottom: 0px;
+  width: 100%;
+  left: 0;
+  display:flex;
+  justify-content:space-between;
+  padding: 0 16px;
+}
+
+.demo-truck .wheel {
+  width: 22px;
+  height: 22px;
+  background: radial-gradient(circle, #333 0%, #111 70%);
+  border-radius: 50%;
+  border: 2px solid #555;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.6);
+  animation: wheel-rotate 1.2s linear infinite;
+}
+
+/* Phases */
+.demo-truck.truck-entering {
+  animation: drive-to-center 2500ms ease-in-out forwards;
+}
+
+.demo-truck.truck-positioning {
+  left: 50%;
+  transform: translate(-50%, -50%);
+  animation: none;
+}
+
+.demo-truck.truck-exiting {
+  animation: drive-to-exit 2400ms ease-in-out forwards;
+}
+
+@keyframes drive-to-center {
+  0% { left: -20%; }
+  60% { left: 42%; }
+  100% { left: 50%; transform: translate(-50%, -50%); }
+}
+
+@keyframes drive-to-exit {
+  0% { left: 50%; transform: translate(-50%, -50%); }
+  100% { left: 120%; transform: translate(-50%, -50%); }
+}
+
+/* Centered weighbridge container inside the road */
+.weighbridge-center {
+  position: absolute;
+  /* nudge weighbridge upward inside the road so it visually aligns with the center-section logs */
+  top: 36%;
+  left: 50%;
+  /* Keep horizontally centered and slightly lifted */
+  transform: translate(-50%, -50%);
+  z-index: 50; /* keep weighbridge above truck and other elements */
+  /* Compute available space between entry/exit pillars and take ~55% for the weighbridge length */
+  width: calc(0.55 * (100% - 2 * (var(--pillar-w) + var(--pillar-gap))));
+  /* Constrain for visual consistency */
+  min-width: 280px;
+  max-width: 800px;
+  /* Ensure there are no transitions or animations applied that could move it */
+  transition: none !important;
+  animation: none !important;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  pointer-events: auto;
+}
+
+/* Responsive adjustments to keep weighbridge and Recent Logs aligned */
+@media (max-width: 1400px) {
+  .weighbridge-row { margin-top: -2.75rem; }
+  .weighbridge-center { top: 38%; }
+}
+
+@media (max-width: 1024px) {
+  .weighbridge-row { margin-top: -1.75rem; }
+  .weighbridge-center { top: 42%; }
+}
+
+/* Desktop (target 1366x768) pixel-tuning */
+@media (min-width: 1200px) and (max-width: 1400px) {
+  /* Slightly wider road and taller surface at desktop */
+  .road-surface {
+    height: 180px;
+    max-width: 1280px;
+    --pillar-w: 72px;
+    --pillar-gap: 48px;
+  }
+
+  /* Make weighbridge larger and place it visually aligned with Recent Logs at this resolution */
+  .weighbridge-center {
+    top: 36%;
+    max-width: 920px;
+  }
+
+  /* Truck positioning and scale for desktop */
+  .demo-truck {
+    top: 58%;
+    width: 200px;
+    height: 80px;
+  }
+
+  .demo-truck .truck-body {
+    width: 150px;
+    height: 60px;
+    left: 18px;
+    top: 10px;
+  }
+
+  .demo-truck .wheel { width: 26px; height: 26px; }
+
+  /* LED display slightly lower so it sits under the overview camera similar to reference */
+  .led-display { margin-top: 1.25rem; width: 360px; height: 56px; }
+}
+
+/* Slightly smaller on medium screens */
+@media (max-width: 1024px) {
+  .weighbridge-center {
+    /* responsive sizing: take ~55% of available space */
+    width: calc(0.55 * (100% - 2 * (var(--pillar-w) + var(--pillar-gap))));
+    max-width: 520px;
+  }
+  .road-surface {
+    --pillar-w: 52px;
+    --pillar-gap: 32px;
+  }
+}
+
+/* Keep absolute centering even on small screens so the weighbridge remains fixed in middle */
+@media (max-width: 768px) {
+  .weighbridge-center {
+    /* smaller screens: responsive calc using vars */
+    width: calc(0.55 * (100% - 2 * (var(--pillar-w) + var(--pillar-gap))));
+    max-width: 320px;
+  }
+  .road-surface {
+    --pillar-w: 40px;
+    --pillar-gap: 16px;
+  }
+}
+
+/* Bottom controls styling */
+.bottom-controls {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  margin-top: 1rem;
+  pointer-events: auto;
+}
+
+.bottom-controls .btn {
+  pointer-events: auto;
+}
+
+
+@keyframes road-move {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 60px 0;
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .scada-layout {
+    grid-template-columns: 1fr 1.5fr 1fr;
+    gap: 1rem;
+  }
+
+  .road-surface {
+    max-width: 800px;
+  }
+}
+
+@media (max-width: 768px) {
+  .scada-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .entry-section,
+  .exit-section {
+    order: -1;
+  }
+
+  .barrier-controls {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .btn {
+    width: 100%;
+  }
+
+  .road-surface {
+    max-width: 100%;
+    height: 80px;
+  }
+
+  .pillar {
+    width: 40px;
+  }
+
+  .building-body {
+    width: 100px;
+    height: 80px;
+  }
+
+  .window {
+    width: 30px;
+    height: 30px;
+  }
+
+  .door {
+    width: 25px;
+    height: 40px;
+  }
+
+  .led-display {
+    width: 250px;
+    height: 40px;
+  }
+
+  .led-text {
+    font-size: 0.8rem;
+  }
+}

@@ -1,0 +1,19 @@
+<div class="barrier-container">
+  <div class="barrier-assembly">
+    <div class="motor-housing"></div>
+    
+    <div 
+      class="barrier-arm" 
+      [class.open]="state === BarrierState.OPEN"
+      [style.transform]="'rotate(' + (-(position ?? 0)) + 'deg)'">
+      <div class="barrier-stripes">
+        <div class="stripe red"></div>
+        <div class="stripe white"></div>
+        <div class="stripe red"></div>
+        <div class="stripe white"></div>
+        <div class="stripe red"></div>
+        <div class="stripe white"></div>
+      </div>
+    </div>
+  </div>
+</div>

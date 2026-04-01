@@ -1,0 +1,68 @@
+.barrier-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.barrier-assembly {
+  display: flex;
+  align-items: flex-end;
+  gap: 0;
+  position: relative;
+}
+
+.motor-housing {
+  width: 50px;
+  height: 60px;
+  background: linear-gradient(135deg, #4a4a4a 0%, #2a2a2a 100%);
+  border-radius: 5px;
+  border: 2px solid #444;
+  box-shadow: 0 5px 10px rgba(0, 0, 0, 0.5);
+}
+
+.barrier-arm {
+  width: 250px;
+  height: 30px;
+  background: #3a3a3a;
+  border-radius: 3px;
+  transform-origin: left center;
+  transition: transform 0.5s ease-in-out;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5);
+  border: 2px solid #444;
+  overflow: hidden;
+}
+
+.barrier-arm.open {
+  transform: rotate(-90deg);
+}
+
+.barrier-stripes {
+  display: flex;
+  height: 100%;
+  width: 100%;
+}
+
+.stripe {
+  flex: 1;
+  height: 100%;
+}
+
+.stripe.red {
+  background: #ff4444;
+}
+
+.stripe.white {
+  background: #ffffff;
+}
+
+@media (max-width: 768px) {
+  .motor-housing {
+    width: 40px;
+    height: 50px;
+  }
+
+  .barrier-arm {
+    width: 200px;
+    height: 25px;
+  }
+}
