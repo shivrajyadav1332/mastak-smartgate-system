@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # ScadaApp
 
 This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 21.2.2.
@@ -57,3 +58,7 @@ Angular CLI does not come with an end-to-end testing framework by default. You c
 ## Additional Resources
 
 For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+=======
+# mastak-smartgate-system
+Boom barrier Gate Automation System Backend using .NET and Oracle
+>>>>>>> c556d08ed8f050095069eae3df78ed0b8945fa8b
