@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vehicles — FullStack Sample</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+      body { padding-top: 2rem; }
+      .table-actions { width: 180px; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="row mb-4">
+        <div class="col-md-8">
+          <h1 class="h3">Vehicle Input</h1>
+          <p class="text-muted">Enter vehicle plate numbers to store logs and trigger SCADA events.</p>
+        </div>
+      </div>
+
+      
+
+      <div class="row mb-3">
+        <div class="col-md-6">
+          <div id="alertPlaceholder"></div>
+          <div class="input-group">
+            <input id="plateInput" type="text" class="form-control" placeholder="Enter plate number (e.g. ABC-1234)" aria-label="Plate number">
+            <button id="addBtn" class="btn btn-primary">Add Vehicle</button>
+            <button id="cancelBtn" class="btn btn-outline-secondary d-none">Cancel</button>
+            <button id="loadBtn" class="btn btn-outline-secondary">Load Vehicles</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-12">
+          <div class="table-responsive">
+            <table class="table table-striped table-bordered align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th style="width:80px">Id</th>
+                  <th>Plate Number</th>
+                  <th style="width:220px">Entry Time</th>
+                  <th class="table-actions">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="usersTableBody">
+                <!-- rows inserted here -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <footer class="mt-4 text-muted">API: <span id="apiBaseText"></span></footer>
+    </div>
+
+    <!-- Bootstrap + optional Popper (for some components) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+      const apiBase = 'http://localhost:5001/api/vehicle';
+      document.getElementById('apiBaseText').textContent = apiBase;
+      const plateInput = document.getElementById('plateInput');
+      const addBtn = document.getElementById('addBtn');
+      const cancelBtn = document.getElementById('cancelBtn');
+      const loadBtn = document.getElementById('loadBtn');
+      const usersTableBody = document.getElementById('usersTableBody');
+      const alertPlaceholder = document.getElementById('alertPlaceholder');
+
+      let editingId = null;
+      let currentVehicles = [];
+      let lastSeenPlate = null;
+
+      function showAlert(message, type = 'danger', timeout = 4000) {
+        alertPlaceholder.innerHTML = '';
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = `
+          <div class="alert alert-${type} alert-dismissible" role="alert">
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          </div>`;
+        alertPlaceholder.append(wrapper);
+        if (timeout) setTimeout(() => { alertPlaceholder.innerHTML = ''; }, timeout);
+      }
+
+      async function loadVehicles() {
+        try {
+          usersTableBody.innerHTML = '<tr><td colspan="4" class="text-center">Loading...</td></tr>';
+          const res = await fetch(apiBase, { method: 'GET' });
+          if (!res.ok) throw new Error('Failed to load vehicles: ' + res.status);
+          const vehicles = await res.json();
+          currentVehicles = Array.isArray(vehicles) ? vehicles : [];
+
+          if (currentVehicles.length === 0) {
+            usersTableBody.innerHTML = '<tr><td colspan="4" class="text-center">No vehicles found</td></tr>';
+            return;
+          }
+
+          usersTableBody.innerHTML = '';
+          currentVehicles.forEach(v => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+              <td>${v.id}</td>
+              <td>${escapeHtml(v.plateNumber)}</td>
+              <td>${new Date(v.entryTime).toLocaleString()}</td>
+              <td>
+                <div class="d-flex gap-2">
+                  <button class="btn btn-sm btn-secondary btn-edit">Edit</button>
+                  <button class="btn btn-sm btn-danger btn-delete">Delete</button>
+                </div>
+              </td>`;
+
+            const editBtn = tr.querySelector('.btn-edit');
+            const delBtn = tr.querySelector('.btn-delete');
+
+            editBtn.addEventListener('click', () => {
+              editingId = v.id;
+              plateInput.value = v.plateNumber;
+              addBtn.textContent = 'Save';
+              cancelBtn.classList.remove('d-none');
+              plateInput.focus();
+            });
+
+            delBtn.addEventListener('click', async () => {
+              if (!confirm('Are you sure to delete "' + v.plateNumber + '"?')) return;
+              try {
+                const r = await fetch(`${apiBase}/${v.id}`, { method: 'DELETE' });
+                if (!r.ok) throw new Error('Failed to delete vehicle: ' + r.status);
+                showAlert('Vehicle deleted', 'success', 2000);
+                await loadVehicles();
+              } catch (err) {
+                showAlert(err.message || 'Error deleting vehicle');
+              }
+            });
+
+            usersTableBody.appendChild(tr);
+          });
+
+          // detect latest vehicle and trigger arrival simulation
+          const latest = currentVehicles.length ? currentVehicles[currentVehicles.length - 1] : null;
+          if (latest && latest.plateNumber !== lastSeenPlate) {
+            lastSeenPlate = latest.plateNumber;
+            simulateVehicleArrival(latest.plateNumber);
+          }
+        } catch (err) {
+          usersTableBody.innerHTML = '<tr><td colspan="4" class="text-danger">Error loading vehicles</td></tr>';
+          showAlert(err.message || 'Error loading vehicles');
+        }
+      }
+
+      function hasDuplicatePlate(plate, excludingId = null) {
+        if (!plate) return false;
+        return currentVehicles.some(u => u.plateNumber.toLowerCase() === plate.toLowerCase() && (excludingId == null || u.id !== excludingId));
+      }
+
+      async function addOrSaveVehicle() {
+        const plate = plateInput.value.trim();
+        if (!plate) { alert('Please enter a plate number.'); return; }
+
+        if (editingId == null) {
+          // add new
+          if (hasDuplicatePlate(plate)) { showAlert('A vehicle with this plate already exists.'); return; }
+          try {
+            addBtn.disabled = true;
+            const res = await fetch(apiBase, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ plateNumber: plate })
+            });
+            if (!res.ok) {
+              const text = await res.text();
+              throw new Error(text || ('Server returned ' + res.status));
+            }
+            plateInput.value = '';
+            showAlert('Vehicle added', 'success', 2000);
+            await loadVehicles();
+          } catch (err) {
+            showAlert(err.message || 'Error adding vehicle');
+          } finally { addBtn.disabled = false; }
+        } else {
+          // save edit
+          if (hasDuplicatePlate(plate, editingId)) { showAlert('A vehicle with this plate already exists.'); return; }
+          try {
+            addBtn.disabled = true;
+            const res = await fetch(`${apiBase}/${editingId}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ plateNumber: plate })
+            });
+            if (!res.ok) {
+              const text = await res.text();
+              throw new Error(text || ('Server returned ' + res.status));
+            }
+            showAlert('Vehicle updated', 'success', 2000);
+            cancelEdit();
+            await loadVehicles();
+          } catch (err) {
+            showAlert(err.message || 'Error updating vehicle');
+          } finally { addBtn.disabled = false; }
+        }
+      }
+
+      function cancelEdit() {
+        editingId = null;
+        plateInput.value = '';
+        addBtn.textContent = 'Add Vehicle';
+        cancelBtn.classList.add('d-none');
+      }
+
+      function escapeHtml(text) {
+        if (!text) return '';
+        return text.replace(/[&\"'<>]/g, c => ({'&':'&amp;','\"':'&quot;',"'":'&#39;','<':'&lt;','>':'&gt;'}[c]));
+      }
+
+      addBtn.addEventListener('click', addOrSaveVehicle);
+      cancelBtn.addEventListener('click', cancelEdit);
+      loadBtn.addEventListener('click', loadVehicles);
+
+      // simulate vehicle arrival (lightweight UI hook for SCADA integration)
+      function simulateVehicleArrival(plate) {
+        console.log('Vehicle arrived:', plate);
+        // simple visual cue: flash an alert
+        showAlert('Vehicle arrived: ' + plate, 'info', 1500);
+        // If SCADA wants to hook into this, it can observe DOM changes or call API directly.
+      }
+
+      // initial load
+      loadVehicles();
+
+      
+    </script>
+  </body>
+</html>

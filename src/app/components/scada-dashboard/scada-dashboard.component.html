@@ -7,7 +7,7 @@
       <div class="entry-section">
         <div class="signal-wrapper">
           <span class="label">Entry Signal</span>
-          <app-signal
+          <app-signal id="entrySignal"
             [state]="scadaService.entrySignal().state"
             [blinking]="scadaService.entrySignal().blinking ?? false">
           </app-signal>
@@ -20,10 +20,12 @@
         </div>
 
         <div class="barrier-wrapper">
-          <app-barrier
-            [state]="scadaService.entryBarrier().state"
-            [position]="scadaService.entryBarrier().position ?? 0">
-          </app-barrier>
+          <div id="entryBarrier" class="barrier" [class.open]="entryBarrierOpen">
+            <app-barrier
+              [state]="scadaService.entryBarrier().state"
+              [position]="scadaService.entryBarrier().position ?? 0">
+            </app-barrier>
+          </div>
           <span class="barrier-status">Boom Barrier (Entry): {{ scadaService.entryBarrier().state === BarrierState.CLOSED ? 'Closed' : 'Open' }}</span>
 
           <div style="margin-top:0.75rem; display:flex; gap:0.5rem;">
@@ -83,14 +85,21 @@
 
             <div style="flex:1;">
               <strong>Recent Logs</strong>
-              <ul class="recent-logs" style="list-style:none; padding:0; margin:0.5rem 0 0 0; max-height:160px; overflow:auto;">
-                <li *ngFor="let entry of scadaService.getVehicleLogs() | async" class="log-entry">
-                  <span class="log-badge" [ngClass]="{ 'log-processed': entry.status === 'processed', 'log-rejected': entry.status === 'rejected' }">{{ entry.status | uppercase }}</span>
-                  <span class="log-text">{{ entry.time | date:'HH:mm:ss' }} — {{ entry.plate }}{{ entry.weight ? ' — ' + entry.weight + 'kg' : '' }}{{ entry.consignment ? ' — ' + entry.consignment : '' }}</span>
-                </li>
-              </ul>
+              <div style="margin-top:0.5rem;">
+                <div *ngFor="let log of logs">
+                  <span [style.color]="log.status === 'ACCEPTED' ? 'green' : 'red'">
+                    {{ log.plateNumber }} - {{ log.entryTime ? (log.entryTime | date:'short') : log.time }} - {{ log.status }}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
+          <div style="margin-top:0.5rem; display:flex; gap:1rem; align-items:center; color:#fff;">
+            <div>Entry Barrier: {{ barrierEntry }}</div>
+            <div>Exit Barrier: {{ barrierExit }}</div>
+          </div>
+          <div style="margin-top:0.5rem; color:#fff; font-weight:700;"> 🚛 Current Truck: {{ currentPlate || '—' }}</div>
+
           <div *ngIf="false" style="margin-top:1rem; display:flex; gap:1rem; align-items:center;">
             <div style="display:flex; gap:0.5rem; align-items:center;">
               <button (click)="toggleAutoMode()">{{ scadaService.isAutoModeActive() ? 'Stop Auto' : 'Start Auto' }}</button>
@@ -132,10 +141,12 @@
         </div>
 
         <div class="barrier-wrapper">
-          <app-barrier
-            [state]="scadaService.exitBarrier().state"
-            [position]="scadaService.exitBarrier().position ?? 0">
-          </app-barrier>
+          <div id="exitBarrier" style="display:inline-block;">
+            <app-barrier
+              [state]="scadaService.exitBarrier().state"
+              [position]="scadaService.exitBarrier().position ?? 0">
+            </app-barrier>
+          </div>
           <span class="barrier-status">Boom Barrier (Exit): {{ scadaService.exitBarrier().state === BarrierState.CLOSED ? 'Closed' : 'Open' }}</span>
 
           <div style="margin-top:0.75rem; display:flex; gap:0.5rem;">
@@ -148,13 +159,15 @@
     </div>
 
     <!-- Weighbridge / Road Platform (centered between Entry and Exit) -->
-    <div class="weighbridge-row">
+        <div class="weighbridge-row">
       <div class="road-surface">
         <div class="pillar left-pillar"></div>
 
         <!-- Demo truck animation element -->
              <div *ngIf="scadaService.vehicleStatus() !== VehicleStatus.IDLE || scadaService.weighbridge().vehicleDetected"
                class="demo-truck"
+             id="truck"
+             [style.left.%]="truckPosition"
              [ngClass]="{
                'truck-entering': scadaService.vehicleStatus() === VehicleStatus.ARRIVED || scadaService.vehicleStatus() === VehicleStatus.VALIDATED,
                'truck-positioning': scadaService.vehicleStatus() === VehicleStatus.POSITIONING || scadaService.vehicleStatus() === VehicleStatus.READY || scadaService.vehicleStatus() === VehicleStatus.WEIGHING,
@@ -178,6 +191,10 @@
             [status]="scadaService.weighbridge().status"
             [vehicleDetected]="scadaService.weighbridge().vehicleDetected">
           </app-weighbridge>
+          <div class="weight-display" style="position:absolute; top:-36px; text-align:center; width:160px;">
+            <div style="color:#fff; font-weight:800;">WEIGHT</div>
+            <div style="color:#ff0; font-size:1.4rem; font-weight:900;">{{ displayedWeight }} kg</div>
+          </div>
         </div>
 
         <div class="pillar right-pillar"></div>
@@ -186,8 +203,25 @@
     
     <!-- Manual controls -->
     <div style="display:flex; justify-content:center; gap:1rem; margin-top:1.5rem;">
+      <div style="display:flex; gap:0.5rem; align-items:center;">
+        <input [(ngModel)]="plateNumber" placeholder="Enter plate (ABC-1234)" style="padding:0.45rem; width:200px;" />
+        <button style="background:#3498db;color:#fff;padding:0.5rem 0.8rem;border-radius:6px;border:none;" (click)="submitPlate()">ADD VEHICLE</button>
+      </div>
       <button style="background:#2ecc71;color:#fff;padding:0.6rem 1rem;border-radius:6px;border:none;" (click)="startAutomatedCycle()">SIMULATE VEHICLE ARRIVAL</button>
       <button style="background:#e67e22;color:#fff;padding:0.6rem 1rem;border-radius:6px;border:none;" (click)="resetWeighbridge()">RESET WEIGHBRIDGE</button>
+    </div>
+
+    <!-- Allowed plates editor -->
+    <div style="display:flex; justify-content:center; gap:1rem; margin-top:1rem;">
+      <div style="width:640px;">
+        <div style="color:#fff; font-weight:700; margin-bottom:0.5rem;">Allowed Plates (one per line)</div>
+        <textarea [(ngModel)]="allowedPlatesText" rows="4" style="width:100%; padding:0.5rem; font-family:monospace;"></textarea>
+        <div style="display:flex; gap:0.5rem; margin-top:0.5rem;">
+          <button (click)="loadAllowedPlates()">Reload</button>
+          <button (click)="saveAllowedPlates()" style="background:#2ecc71;color:#fff;padding:0.4rem 0.8rem;border-radius:6px;border:none;">Save</button>
+          <span style="color:#fff; margin-left:0.5rem;">{{ allowedPlatesMessage }}</span>
+        </div>
+      </div>
     </div>
   </main>
 </div>

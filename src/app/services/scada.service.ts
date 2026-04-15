@@ -1,5 +1,6 @@
 import { Injectable, signal, computed } from '@angular/core';
-import { BehaviorSubject, interval, timer } from 'rxjs';
+import { HttpClient } from '@angular/common/http';
+import { BehaviorSubject, interval, timer, Subject } from 'rxjs';
 import { switchMap, take } from 'rxjs/operators';
 import {
   ScadaData,
@@ -13,6 +14,8 @@ import {
 } from '../models/scada.models';
 import { VehicleStatus } from '../models/scada.models';
 import { InputMode } from '../models/scada.models';
+// SignalR client
+import * as signalR from '@microsoft/signalr';
 
 @Injectable({
   providedIn: 'root'
@@ -114,6 +117,34 @@ export class ScadaService {
     return this.alertMessage;
   }
 
+  addVehicle(plate: string) {
+    // VehicleDto expects `PlateNumber` (PascalCase)
+    return this.http.post<any>(this.apiUrl, { PlateNumber: plate });
+  }
+
+  // Check a plate via backend validation endpoint
+  checkVehicle(plate: string) {
+    return this.http.get<any>(`${this.apiUrl}/check/${plate}`);
+  }
+
+  // Allowed plates management (GET/POST)
+  getAllowedPlates() {
+    return this.http.get<string[]>(`${this.apiUrl}/allowed`);
+  }
+
+  setAllowedPlates(plates: string[]) {
+    return this.http.post<string[]>(`${this.apiUrl}/allowed`, plates);
+  }
+
+  // GET all vehicles (in-memory) from backend
+  getVehicles() {
+    return this.http.get<any[]>(this.apiUrl);
+  }
+
+  getLogs() {
+    return this.http.get<any[]>(this.apiUrl + '/logs');
+  }
+
   // Simulated assignment database (portal data)
   private assignments: Record<string, { consignment: string; customer: string }> = {
     'ABC-1234': { consignment: 'CN-1001', customer: 'Acme Corp' },
@@ -141,7 +172,15 @@ export class ScadaService {
   // Continuous mode: when enabled, do not set VehicleStatus.IDLE between cycles
   private continuousMode = false;
 
-  constructor() {
+  private apiUrl = 'http://localhost:5001/api/vehicle';
+  private hubConnection: signalR.HubConnection | null = null;
+
+  // Vehicle trigger event observable for other components to subscribe
+  private vehicleTrigger = new Subject<string>();
+  vehicleTrigger$ = this.vehicleTrigger.asObservable();
+
+
+  constructor(private http: HttpClient) {
     this.startDummyDataSimulation();
     // Enable ANPR cameras so detections and processing are visible immediately
     this.entryAnprCamera.update(c => ({ ...c, active: true }));
@@ -150,6 +189,52 @@ export class ScadaService {
     this.enableContinuousMode();
     // Start auto mode with a demo-friendly interval (10s base + jitter)
     this.startAutoMode(10000);
+    // Load persisted logs if present
+    try {
+      const raw = localStorage.getItem('scada.vehicleLogs');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          // restore into BehaviorSubject
+          this.vehicleLogs.next(parsed.slice(0, 100));
+        }
+      }
+    } catch (e) {
+      console.warn('failed to load persisted logs', e);
+    }
+
+    // Try to connect to backend SignalR hub for real-time events
+    this.initSignalR();
+  }
+
+  // Trigger a vehicle check event
+  triggerVehicleCheck(plate: string) {
+    try { this.vehicleTrigger.next(plate); } catch (e) { }
+  }
+
+  private initSignalR() {
+    try {
+      this.hubConnection = new signalR.HubConnectionBuilder()
+        .withUrl('http://localhost:5001/hub/vehicle')
+        .withAutomaticReconnect()
+        .build();
+
+      this.hubConnection.on('VehicleAdded', (payload: any) => {
+        try {
+          const plate = payload?.plateNumber || payload?.plate || payload?.PlateNumber;
+          if (plate) {
+            // start a processing cycle in the frontend driven by the received plate
+            this.simulateSingleVehicleCycle(plate);
+            // also add to local logs so UI shows it immediately
+            this.addLog({ plate: plate, status: payload.status || 'processed', time: payload.time || new Date(), weight: payload.weight ?? null });
+          }
+        } catch (e) { console.warn('VehicleAdded handler', e); }
+      });
+
+      this.hubConnection.start().catch((err: any) => console.warn('SignalR start failed', err));
+    } catch (e) {
+      console.warn('initSignalR error', e);
+    }
   }
 
   /**
@@ -757,11 +842,14 @@ export class ScadaService {
     return this.vehicleLogs;
   }
 
+
   private addLog(entry: any): void {
     const current = this.vehicleLogs.getValue();
     // Normalize log shape so UI can reliably display processed/rejected entries
     const normalized = {
       plate: entry.plate || entry.details?.plate || 'N/A',
+      // Add plateNumber for templates that expect this property
+      plateNumber: entry.plateNumber || entry.plate || entry.details?.plate || 'N/A',
       status: entry.status || entry.event || 'info',
       time: entry.time || new Date(),
       weight: entry.weight ?? entry.details?.weight ?? null,
@@ -771,13 +859,33 @@ export class ScadaService {
     };
 
     current.unshift(normalized);
-    this.vehicleLogs.next(current.slice(0, 100));
+    const next = current.slice(0, 100);
+    this.vehicleLogs.next(next);
+    // persist to localStorage for demo/demo recovery
+    try {
+      localStorage.setItem('scada.vehicleLogs', JSON.stringify(next));
+    } catch (e) {
+      console.warn('failed to persist logs', e);
+    }
   }
 
   /**
-   * Simulate a single vehicle processing cycle including ANPR validation
+   * Public helper for components to push a normalized log entry into the central log store.
    */
-  simulateSingleVehicleCycle(): void {
+  pushLog(entry: any): void {
+    try {
+      this.addLog(entry);
+    } catch (e) {
+      console.warn('pushLog failed', e);
+    }
+  }
+
+  /**
+   * Simulate a single vehicle processing cycle including ANPR validation.
+   * If `providedPlate` is given, the cycle will use that plate instead of
+   * choosing a random one (useful for manual/testing flows).
+   */
+  simulateSingleVehicleCycle(providedPlate?: string): void {
     // Prevent overlapping cycles using internal processing flag
     if (this.isProcessing) return;
 
@@ -793,9 +901,9 @@ export class ScadaService {
       this.mode.set(InputMode.ANPR);
       this.alertMessage.next('');
 
-      // Simulate ANPR read
+      // Simulate ANPR read - prefer providedPlate when available
       const plates = ['ABC-1234', 'XYZ-5678', 'DEF-9012', 'GHI-3456', 'JKL-7890'];
-      const plate = plates[Math.floor(Math.random() * plates.length)];
+      const plate = providedPlate ?? plates[Math.floor(Math.random() * plates.length)];
       this.entryAnprCamera.update(c => ({ ...c, detectedPlate: plate, confidence: Math.floor(70 + Math.random() * 30), lastDetection: new Date() }));
 
       // ANPR delay (realistic)

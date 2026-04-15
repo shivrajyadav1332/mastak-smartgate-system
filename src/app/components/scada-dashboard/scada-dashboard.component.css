@@ -373,6 +373,7 @@
   height: 60px;
   pointer-events: none;
   z-index: 30; /* keep below weighbridge */
+  transition: left 2s linear;
 }
 
 .demo-truck .truck-label {
@@ -625,4 +626,24 @@
   .led-text {
     font-size: 0.8rem;
   }
+}
+
+/* Smooth barrier animation for entry and exit booms */
+#entryBarrier, #exitBarrier {
+  transition: transform 0.5s ease;
+  transform-origin: left center;
+}
+
+/* Visual barrier element used for direct DOM rotation */
+.barrier {
+  width: 120px;
+  height: 10px;
+  background: red;
+  transform-origin: left center;
+  transform: rotate(0deg);
+  transition: transform 0.5s ease;
+}
+
+.barrier.open {
+  transform: rotate(-90deg);
 }
