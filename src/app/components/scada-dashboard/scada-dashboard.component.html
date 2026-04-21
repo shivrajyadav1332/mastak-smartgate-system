@@ -8,8 +8,8 @@
         <div class="signal-wrapper">
           <span class="label">Entry Signal</span>
           <app-signal id="entrySignal"
-            [state]="scadaService.entrySignal().state"
-            [blinking]="scadaService.entrySignal().blinking ?? false">
+            [state]="entrySignal === 'GREEN' ? SignalState.GREEN : SignalState.RED"
+            [blinking]="false">
           </app-signal>
         </div>
 
@@ -20,13 +20,13 @@
         </div>
 
         <div class="barrier-wrapper">
-          <div id="entryBarrier" class="barrier" [class.open]="entryBarrierOpen">
+          <div id="entryBarrier" class="barrier" [class.open]="barrierEntry === BarrierState.OPEN">
             <app-barrier
-              [state]="scadaService.entryBarrier().state"
-              [position]="scadaService.entryBarrier().position ?? 0">
+              [state]="barrierEntry"
+              [position]="barrierEntry === BarrierState.OPEN ? 90 : 0">
             </app-barrier>
           </div>
-          <span class="barrier-status">Boom Barrier (Entry): {{ scadaService.entryBarrier().state === BarrierState.CLOSED ? 'Closed' : 'Open' }}</span>
+          <span class="barrier-status">Boom Barrier (Entry): {{ barrierEntry === BarrierState.CLOSED ? 'Closed' : 'Open' }}</span>
 
           <div style="margin-top:0.75rem; display:flex; gap:0.5rem;">
             <button (click)="openEntryBarrier()">OPEN BARRIER</button>
@@ -85,10 +85,10 @@
 
             <div style="flex:1;">
               <strong>Recent Logs</strong>
-              <div style="margin-top:0.5rem;">
+              <div style="margin-top:0.5rem; max-height:200px; overflow:auto;">
                 <div *ngFor="let log of logs">
-                  <span [style.color]="log.status === 'ACCEPTED' ? 'green' : 'red'">
-                    {{ log.plateNumber }} - {{ log.entryTime ? (log.entryTime | date:'short') : log.time }} - {{ log.status }}
+                  <span [style.color]="(log.status || '').toString().toUpperCase() === 'ACCEPTED' ? 'limegreen' : 'salmon'">
+                    {{ log.plate || log.plateNumber }} - {{ (log.timestamp || log.entryTime || log.time) | date:'short' }} - {{ log.status }}
                   </span>
                 </div>
               </div>
@@ -129,8 +129,8 @@
         <div class="signal-wrapper">
           <span class="label">Exit Signal</span>
           <app-signal
-            [state]="scadaService.exitSignal().state"
-            [blinking]="scadaService.exitSignal().blinking ?? false">
+            [state]="exitSignal === 'GREEN' ? SignalState.GREEN : SignalState.RED"
+            [blinking]="false">
           </app-signal>
         </div>
 
@@ -141,13 +141,13 @@
         </div>
 
         <div class="barrier-wrapper">
-          <div id="exitBarrier" style="display:inline-block;">
+          <div id="exitBarrier" style="display:inline-block;" [class.open]="barrierExit === BarrierState.OPEN">
             <app-barrier
-              [state]="scadaService.exitBarrier().state"
-              [position]="scadaService.exitBarrier().position ?? 0">
+              [state]="barrierExit"
+              [position]="barrierExit === BarrierState.OPEN ? 90 : 0">
             </app-barrier>
           </div>
-          <span class="barrier-status">Boom Barrier (Exit): {{ scadaService.exitBarrier().state === BarrierState.CLOSED ? 'Closed' : 'Open' }}</span>
+          <span class="barrier-status">Boom Barrier (Exit): {{ barrierExit === BarrierState.CLOSED ? 'Closed' : 'Open' }}</span>
 
           <div style="margin-top:0.75rem; display:flex; gap:0.5rem;">
             <button (click)="openExitBarrier()">OPEN BARRIER</button>
@@ -205,9 +205,11 @@
     <div style="display:flex; justify-content:center; gap:1rem; margin-top:1.5rem;">
       <div style="display:flex; gap:0.5rem; align-items:center;">
         <input [(ngModel)]="plateNumber" placeholder="Enter plate (ABC-1234)" style="padding:0.45rem; width:200px;" />
-        <button style="background:#3498db;color:#fff;padding:0.5rem 0.8rem;border-radius:6px;border:none;" (click)="submitPlate()">ADD VEHICLE</button>
+        <input type="number" [(ngModel)]="manualWeight" placeholder="Weight kg" style="padding:0.45rem; width:120px;" />
+        <button style="background:#3498db;color:#fff;padding:0.5rem 0.8rem;border-radius:6px;border:none;" (click)="submitPlate()">PROCESS VEHICLE</button>
       </div>
-      <button style="background:#2ecc71;color:#fff;padding:0.6rem 1rem;border-radius:6px;border:none;" (click)="startAutomatedCycle()">SIMULATE VEHICLE ARRIVAL</button>
+      <button style="background:#2ecc71;color:#fff;padding:0.6rem 1rem;border-radius:6px;border:none;" (click)="simulateVehicle()">SIMULATE VEHICLE ARRIVAL</button>
+      <button style="background:#9b59b6;color:#fff;padding:0.6rem 1rem;border-radius:6px;border:none;" (click)="applySampleState()">Apply Sample State</button>
       <button style="background:#e67e22;color:#fff;padding:0.6rem 1rem;border-radius:6px;border:none;" (click)="resetWeighbridge()">RESET WEIGHBRIDGE</button>
     </div>
 

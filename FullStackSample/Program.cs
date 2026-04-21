@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.EntityFrameworkCore;
 using FullStackSample.Data;
+using FullStackSample.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -11,6 +12,9 @@ builder.Services.AddControllers();
 
 // SignalR for real-time notifications
 builder.Services.AddSignalR();
+
+// Device service (singleton) that simulates devices and maintains state
+builder.Services.AddSingleton<DeviceService>();
 
 // Configure EF Core with SQLite
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -41,8 +45,12 @@ app.UseAuthorization();
 app.MapControllers();
 app.MapHub<FullStackSample.Hubs.VehicleHub>("/hub/vehicle");
 
-// Ensure the app listens on the requested URL for the frontend JS fetch calls (HTTP).
+// Respect configured URLs from command-line or environment; default to http://localhost:5001
+var configuredUrls = builder.Configuration["urls"] ?? Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "http://localhost:5001";
 app.Urls.Clear();
-app.Urls.Add("http://localhost:5001");
+foreach (var u in configuredUrls.Split(';', StringSplitOptions.RemoveEmptyEntries))
+{
+    app.Urls.Add(u);
+}
 
 app.Run();

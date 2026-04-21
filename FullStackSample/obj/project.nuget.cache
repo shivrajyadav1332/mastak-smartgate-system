@@ -1,9 +1,11 @@
 {
   "version": 2,
-  "dgSpecHash": "Sy+sVlfUyW8=",
+  "dgSpecHash": "g975yoyQ3gg=",
   "success": true,
   "projectFilePath": "C:\\Users\\shivra163872\\Project\\mastak-smartgate-system\\FullStackSample\\FullStackSample.csproj",
   "expectedPackageFiles": [
+    "C:\\Users\\shivra163872\\.nuget\\packages\\exceldatareader\\3.8.0\\exceldatareader.3.8.0.nupkg.sha512",
+    "C:\\Users\\shivra163872\\.nuget\\packages\\exceldatareader.dataset\\3.8.0\\exceldatareader.dataset.3.8.0.nupkg.sha512",
     "C:\\Users\\shivra163872\\.nuget\\packages\\humanizer.core\\2.14.1\\humanizer.core.2.14.1.nupkg.sha512",
     "C:\\Users\\shivra163872\\.nuget\\packages\\microsoft.bcl.asyncinterfaces\\6.0.0\\microsoft.bcl.asyncinterfaces.6.0.0.nupkg.sha512",
     "C:\\Users\\shivra163872\\.nuget\\packages\\microsoft.codeanalysis.analyzers\\3.3.3\\microsoft.codeanalysis.analyzers.3.3.3.nupkg.sha512",

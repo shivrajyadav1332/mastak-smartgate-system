@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Weighbridge Mock UI</title>
+    <style>
+      body { font-family: Arial, Helvetica, sans-serif; margin: 20px; }
+      .panel { border: 1px solid #ddd; padding: 12px; border-radius: 6px; margin-bottom: 12px; }
+      .row { display:flex; gap:12px; align-items:center; }
+      .big { font-size: 1.2em; font-weight: 600; }
+      #logs { height:200px; overflow:auto; background:#111; color:#eee; padding:8px; font-family: monospace; }
+      button { padding:8px 12px; }
+    </style>
+  </head>
+  <body>
+    <h2>Weighbridge Mock UI (Minimal)</h2>
+
+    <div class="panel">
+      <div class="row">
+        <label>Plate:</label>
+        <input id="plate" placeholder="ABC-1234" />
+        <button id="arriveBtn">Trigger Arrival</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="big">Current Truck: <span id="plateDisplay">—</span></div>
+      <div>Entry Signal: <span id="entrySignal">—</span></div>
+      <div>Exit Signal: <span id="exitSignal">—</span></div>
+      <div>Entry Barrier: <span id="entryBarrier">—</span></div>
+      <div>Exit Barrier: <span id="exitBarrier">—</span></div>
+      <div>Weight: <span id="weight">—</span></div>
+      <div>Mode: <span id="mode">—</span></div>
+    </div>
+
+    <div class="panel">
+      <div style="margin-bottom:8px"><strong>Event Log</strong></div>
+      <div id="logs"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/7.0.5/signalr.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

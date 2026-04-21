@@ -1,0 +1,9 @@
+C:\Users\shivra163872\Project\mastak-smartgate-system\obj\Debug\net10.0\WeighbridgeMockAPI-Replica.csproj.AssemblyReference.cache
+C:\Users\shivra163872\Project\mastak-smartgate-system\obj\Debug\net10.0\rpswa.dswa.cache.json
+C:\Users\shivra163872\Project\mastak-smartgate-system\obj\Debug\net10.0\WeighbridgeMockAPI-Replica.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\shivra163872\Project\mastak-smartgate-system\obj\Debug\net10.0\WeighbridgeMockAPI-Replica.AssemblyInfoInputs.cache
+C:\Users\shivra163872\Project\mastak-smartgate-system\obj\Debug\net10.0\WeighbridgeMockAPI-Replica.AssemblyInfo.cs
+C:\Users\shivra163872\Project\mastak-smartgate-system\obj\Debug\net10.0\WeighbridgeMockAPI-Replica.csproj.CoreCompileInputs.cache
+C:\Users\shivra163872\Project\mastak-smartgate-system\obj\Debug\net10.0\WeighbridgeMockAPI-Replica.MvcApplicationPartsAssemblyInfo.cs
+C:\Users\shivra163872\Project\mastak-smartgate-system\obj\Debug\net10.0\WeighbridgeMockAPI-Replica.MvcApplicationPartsAssemblyInfo.cache
+C:\Users\shivra163872\Project\mastak-smartgate-system\obj\Debug\net10.0\WeighbridgeMockAPI-Replica.sourcelink.json

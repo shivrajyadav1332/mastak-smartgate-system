@@ -26,7 +26,6 @@ C:\Users\shivra163872\Project\mastak-smartgate-system\FullStackSample\obj\Debug\
 C:\Users\shivra163872\Project\mastak-smartgate-system\FullStackSample\obj\Debug\net10.0\FullStackSample.pdb
 C:\Users\shivra163872\Project\mastak-smartgate-system\FullStackSample\obj\Debug\net10.0\FullStackSample.genruntimeconfig.cache
 C:\Users\shivra163872\Project\mastak-smartgate-system\FullStackSample\obj\Debug\net10.0\ref\FullStackSample.dll
-C:\Users\shivra163872\Project\mastak-smartgate-system\FullStackSample\obj\Debug\net10.0\compressed\b6b56oray6-{0}-7xydytxy0p-7xydytxy0p.gz
 C:\Users\shivra163872\Project\mastak-smartgate-system\FullStackSample\bin\Debug\net10.0\Humanizer.dll
 C:\Users\shivra163872\Project\mastak-smartgate-system\FullStackSample\bin\Debug\net10.0\Microsoft.Bcl.AsyncInterfaces.dll
 C:\Users\shivra163872\Project\mastak-smartgate-system\FullStackSample\bin\Debug\net10.0\Microsoft.CodeAnalysis.dll
@@ -126,3 +125,6 @@ C:\Users\shivra163872\Project\mastak-smartgate-system\FullStackSample\obj\Debug\
 C:\Users\shivra163872\Project\mastak-smartgate-system\FullStackSample\obj\Debug\net10.0\FullStac.FBAB0CB5.Up2Date
 C:\Users\shivra163872\Project\mastak-smartgate-system\FullStackSample\bin\Debug\net10.0\payload.json
 C:\Users\shivra163872\Project\mastak-smartgate-system\FullStackSample\bin\Debug\net10.0\appsettings.json
+C:\Users\shivra163872\Project\mastak-smartgate-system\FullStackSample\bin\Debug\net10.0\ExcelDataReader.dll
+C:\Users\shivra163872\Project\mastak-smartgate-system\FullStackSample\bin\Debug\net10.0\ExcelDataReader.DataSet.dll
+C:\Users\shivra163872\Project\mastak-smartgate-system\FullStackSample\obj\Debug\net10.0\compressed\b6b56oray6-{0}-nfhk01dnp9-nfhk01dnp9.gz

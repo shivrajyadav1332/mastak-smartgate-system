@@ -23,17 +23,21 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
 
   intervalId: any;
   pollIntervalId: any;
+  entryCloseTimeout: any;
+  exitCloseTimeout: any;
   logs: any[] = [];
   entryBarrierOpen = false;
   entrySignal = 'RED';
+  exitSignal = 'RED';
   currentTruck = '';
   weight = 0;
   displayedWeight = 0;
   plateNumber = '';
+  manualWeight = 1500;
   currentPlate = '';
   truckPosition = 0; // 0 = start, 50 = center, 100 = exit
-  barrierEntry = 'CLOSED';
-  barrierExit = 'CLOSED';
+  barrierEntry = BarrierState.CLOSED;
+  barrierExit = BarrierState.CLOSED;
   ledMessage = '';
   paMessage = '';
   vehicleStatusText = '';
@@ -63,7 +67,8 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
     // Poll the service state at a short interval to update UI bindings from the centralized state machine
     this.intervalId = setInterval(() => this.syncFromService(), 300);
 
-    // Initial load of backend vehicles and start auto-refresh every 2s
+    // Initial load of backend system status and logs
+    this.loadSystemStatus();
     this.loadLogs();
     // Use checkNewVehicle to both refresh and trigger processing
     this.checkIntervalId = setInterval(() => this.checkNewVehicle(), 2000);
@@ -85,6 +90,8 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
     if (this.pollIntervalId) clearInterval(this.pollIntervalId);
     if (this.checkIntervalId) clearInterval(this.checkIntervalId);
     if (this.vehicleTriggerSub) this.vehicleTriggerSub.unsubscribe?.();
+    if (this.entryCloseTimeout) clearTimeout(this.entryCloseTimeout);
+    if (this.exitCloseTimeout) clearTimeout(this.exitCloseTimeout);
   }
 
   private syncFromService(): void {
@@ -181,17 +188,77 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
   // Submit a specific plate to the centralized state machine. The service will run the full state flow.
   submitPlate(): void {
     if (!this.plateNumber) return;
-    // inject detected plate for the camera and start a processing cycle using that plate
-    try {
-      this.scadaService.entryAnprCamera.update(c => ({ ...c, detectedPlate: this.plateNumber, confidence: 95, lastDetection: new Date() }));
-    } catch {}
-    // call backend check and update local UI state
-    this.checkVehicleAndUpdate(this.plateNumber);
-    this.scadaService.simulateSingleVehicleCycle(this.plateNumber);
-    // Also run local simulation against hardcoded allowed plates for quick testing
-    this.simulateBarrier(this.plateNumber);
-    // clear input for convenience
-    this.plateNumber = '';
+
+    const plate = this.plateNumber.trim();
+    const payload = { plateNumber: plate, weight: this.manualWeight };
+
+    this.scadaService.processVehicle(payload).subscribe({
+      next: (res: any) => {
+        try {
+          const status = (res.status || '').toString().toUpperCase();
+
+          // Refresh backend data
+          this.loadLogs();
+          this.loadSystemStatus();
+          this.loadControl();
+
+          if (status === 'ACCEPTED') {
+            this.entrySignal = 'GREEN';
+            this.weight = res.weight || payload.weight || 0;
+            this.currentPlate = plate;
+          } else {
+            this.entrySignal = 'RED';
+            this.entryBarrierOpen = false;
+            this.currentPlate = plate;
+            this.weight = res.weight || payload.weight || 0;
+            try { this.scadaService.pushLog({ plateNumber: plate, status: 'REJECTED', time: new Date(), weight: this.weight }); } catch (e) {}
+          }
+        } catch (e) {
+          console.warn('processVehicle response handling failed', e);
+        }
+      },
+      error: (err: any) => {
+        console.error('processVehicle failed', err);
+        this.entrySignal = 'RED';
+        this.entryBarrierOpen = false;
+      },
+      complete: () => {
+        this.plateNumber = '';
+      }
+    });
+  }
+
+  simulateVehicle(): void {
+    // pick a sample plate and call the same backend API
+    const samples = ['ABC-1234', 'XYZ-9999', 'DEF-9012', 'GHI-3456'];
+    const plate = samples[Math.floor(Math.random() * samples.length)];
+    this.plateNumber = plate;
+    // random realistic weight between 2000 and 28000 kg
+    this.manualWeight = Math.floor(2000 + Math.random() * 26000);
+    this.submitPlate();
+  }
+
+  // Apply a preset system state to the backend and refresh UI
+  applySampleState(): void {
+    const payload = {
+      entrySignal: 'RED',
+      exitSignal: 'GREEN',
+      entryBarrier: BarrierState.CLOSED,
+      exitBarrier: BarrierState.OPEN,
+      currentTruckPlate: 'ABC-1234',
+      currentWeight: 32000,
+      mode: 'ANPR',
+      ledMessage: 'PROCEED TO EXIT'
+    };
+
+    this.scadaService.setSystemState(payload).subscribe({
+      next: () => {
+        this.loadSystemStatus();
+        this.loadControl();
+        this.loadLogs();
+      },
+      error: (err: any) => { console.warn('applySampleState failed', err); }
+    });
   }
 
   loadAllowedPlates(): void {
@@ -205,6 +272,24 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
         error: () => { this.allowedPlatesMessage = 'Unable to load'; }
       });
     } catch (e) { this.allowedPlatesMessage = 'Error'; }
+  }
+
+  loadSystemStatus(): void {
+    this.scadaService.getSystemStatus().subscribe({
+      next: (s: any) => {
+        try {
+          this.entrySignal = s.entrySignal || 'RED';
+          this.exitSignal = s.exitSignal || 'RED';
+          this.barrierEntry = s.entryBarrier || BarrierState.CLOSED;
+          this.barrierExit = s.exitBarrier || BarrierState.CLOSED;
+          this.currentPlate = s.currentTruckPlate || '';
+          this.weight = s.currentWeight || 0;
+        } catch (e) {
+          console.warn('loadSystemStatus parse error', e);
+        }
+      },
+      error: (err: any) => { console.warn('getSystemStatus failed', err); }
+    });
   }
 
   saveAllowedPlates(): void {
@@ -270,12 +355,13 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
   }
 
   loadLogs(): void {
-    this.scadaService.getVehicles().subscribe({
-      next: (data: any) => {
+    this.scadaService.getLogs().subscribe({
+      next: (data: any[]) => {
         this.logs = data || [];
         if (this.logs && this.logs.length > 0) {
           // backend returns most recent first
-          this.currentPlate = this.logs[0].plateNumber || this.logs[0].plate || '';
+          const recent = this.logs[0];
+          this.currentPlate = recent.plate || recent.plateNumber || recent.name || '';
         } else {
           this.currentPlate = '';
         }
@@ -382,45 +468,24 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
 
   // Polling-based control loader: queries latest vehicle and updates UI
   loadControl(): void {
-    fetch('http://localhost:5001/api/vehicle/latest')
-      .then(res => {
-        if (!res.ok) throw new Error('Network response was not ok');
-        return res.json();
-      })
-      .then((data: any) => {
-        console.log('API DATA:', data);
+    this.scadaService.getSystemStatus().subscribe({
+      next: (data: any) => {
+        try {
+          // SIGNAL
+          this.entrySignal = data.entrySignal || 'RED';
+          this.exitSignal = data.exitSignal || 'RED';
 
-        // SIGNAL
-        if (data.signal === 'GREEN') {
-          this.setGreenSignal();
-        } else {
-          this.setRedSignal();
-        }
+          // BARRIERS
+          this.barrierEntry = data.entryBarrier || BarrierState.CLOSED;
+          this.barrierExit = data.exitBarrier || BarrierState.CLOSED;
 
-        // Reset barrier element first to avoid clipped transforms
-        const el = document.getElementById('entryBarrier');
-        if (el) {
-          el.style.transform = 'rotate(0deg)';
-        }
-
-        // Apply new state after a tiny delay so reset takes effect
-        setTimeout(() => {
-          if (data.barrier === 'OPEN') {
-            this.openBarrier();
-          } else {
-            this.closeBarrier();
-          }
-        }, 50);
-
-        // TRUCK
-        if (data.moveTruck) {
-          this.moveTruck();
-        }
-
-        // WEIGHT
-        this.weight = data.weight || 0;
-      })
-      .catch(err => console.error(err));
+          // WEIGHT & TRUCK
+          this.weight = data.currentWeight || 0;
+          this.currentPlate = data.currentTruckPlate || '';
+        } catch (e) { console.warn('loadControl parse error', e); }
+      },
+      error: (err: any) => { console.warn('loadControl error', err); }
+    });
   }
 
   // DOM-based barrier operations (direct transform on element)

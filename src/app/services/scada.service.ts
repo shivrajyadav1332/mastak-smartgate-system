@@ -116,33 +116,55 @@ export class ScadaService {
   getAlertMessage(): BehaviorSubject<string> {
     return this.alertMessage;
   }
+  // Base API URL for backend
+  private readonly baseApi = 'http://localhost:5001/api';
 
+  // Legacy helper that UI may use to push an internal log (keeps BehaviorSubject semantics)
+  // Keep existing allowed-plates and vehicles helpers for backward compatibility
   addVehicle(plate: string) {
-    // VehicleDto expects `PlateNumber` (PascalCase)
-    return this.http.post<any>(this.apiUrl, { PlateNumber: plate });
+    // Use route-backed arrival to avoid body-binding issues
+    return this.http.post<any>(`${this.baseApi}/vehicle/arrive/${encodeURIComponent(plate)}`, {});
   }
 
-  // Check a plate via backend validation endpoint
+  // Check a plate via backend validation endpoint (keeps older name)
   checkVehicle(plate: string) {
-    return this.http.get<any>(`${this.apiUrl}/check/${plate}`);
+    return this.http.get<any>(`${this.baseApi}/vehicle/check/${plate}`);
   }
 
   // Allowed plates management (GET/POST)
   getAllowedPlates() {
-    return this.http.get<string[]>(`${this.apiUrl}/allowed`);
+    return this.http.get<string[]>(`${this.baseApi}/system/allowed-plates`);
   }
 
   setAllowedPlates(plates: string[]) {
-    return this.http.post<string[]>(`${this.apiUrl}/allowed`, plates);
+    return this.http.post(`${this.baseApi}/system/allowed-plates`, plates);
   }
 
   // GET all vehicles (in-memory) from backend
   getVehicles() {
-    return this.http.get<any[]>(this.apiUrl);
+    return this.http.get<any[]>(`${this.baseApi}/vehicle`);
+  }
+
+  // New canonical API methods requested by task
+  vehicleArrive(plate: string) {
+    return this.http.post<any>(`${this.baseApi}/vehicle/arrive/${encodeURIComponent(plate)}`, {});
+  }
+
+  // Process vehicle via weighbridge API
+  processVehicle(data: any) {
+    return this.http.post<any>(`${this.apiUrl}/process`, data);
+  }
+
+  getSystemStatus() {
+    return this.http.get<any>(`${this.baseApi}/system/state`);
+  }
+
+  setSystemState(state: any) {
+    return this.http.post<any>(`${this.baseApi}/system/state`, state);
   }
 
   getLogs() {
-    return this.http.get<any[]>(this.apiUrl + '/logs');
+    return this.http.get<any[]>(`${this.baseApi}/vehicle/logs`);
   }
 
   // Simulated assignment database (portal data)
@@ -214,21 +236,106 @@ export class ScadaService {
 
   private initSignalR() {
     try {
+      // Use backend SignalR hub path exposed by the .NET API
+      const hubUrl = this.baseApi.replace('/api','') + '/hub/vehicle';
       this.hubConnection = new signalR.HubConnectionBuilder()
-        .withUrl('http://localhost:5001/hub/vehicle')
+        .withUrl(hubUrl)
         .withAutomaticReconnect()
         .build();
 
+      // Server will broadcast 'SystemStateChanged' with the full system state
+      this.hubConnection.on('SystemStateChanged', (payload: any) => {
+        try {
+          if (!payload) return;
+          console.debug('SignalR SystemStateChanged received', payload);
+          // Map signals
+          const es = (payload.entrySignal || '').toString().toUpperCase();
+          const xs = (payload.exitSignal || '').toString().toUpperCase();
+          this.setEntrySignal(es === 'GREEN' ? SignalState.GREEN : SignalState.RED);
+          this.setExitSignal(xs === 'GREEN' ? SignalState.GREEN : SignalState.RED);
+
+          // Barriers
+          const entryBarrier = (payload.entryBarrier || '').toString().toUpperCase();
+          const exitBarrier = (payload.exitBarrier || '').toString().toUpperCase();
+          this.entryBarrier.update(b => ({ ...b, state: entryBarrier === 'OPEN' ? BarrierState.OPEN : BarrierState.CLOSED }));
+          this.exitBarrier.update(b => ({ ...b, state: exitBarrier === 'OPEN' ? BarrierState.OPEN : BarrierState.CLOSED }));
+
+          // Weighbridge
+          const w = Number(payload.currentWeight || 0) || 0;
+          this.weighbridge.update(s => ({ ...s, weight: w }));
+
+          // LED + current plate
+          this.updateLedMessage(payload.ledMessage || '');
+          if (payload.currentTruckPlate) {
+            try { this.pushLog({ plate: payload.currentTruckPlate, status: 'processed', time: new Date(), weight: w }); } catch (e) {}
+          }
+        } catch (e) {
+          console.warn('SystemStateChanged handler failed', e);
+        }
+      });
+
+      // Also listen for explicit signal/barrier events for reliable animations
+      this.hubConnection.on('ExitSignalChanged', (val: any) => {
+        try {
+          console.debug('SignalR ExitSignalChanged', val);
+          const xs = (val || '').toString().toUpperCase();
+          this.setExitSignal(xs === 'GREEN' ? SignalState.GREEN : SignalState.RED);
+        } catch (e) { console.warn('ExitSignalChanged handler', e); }
+      });
+
+      this.hubConnection.on('ExitBarrierChanged', (val: any) => {
+        try {
+          console.debug('SignalR ExitBarrierChanged', val);
+          const b = (val || '').toString().toUpperCase();
+          // If entry barrier is open, close it first then open exit to avoid collision
+          if (b === 'OPEN') {
+            if (this.entryBarrier().state === BarrierState.OPEN) {
+              // close entry then open exit after animation completes
+              this.closeEntryBarrier();
+              setTimeout(() => { this.openExitBarrier(); }, 1100);
+            } else {
+              this.openExitBarrier();
+            }
+          } else {
+            this.closeExitBarrier();
+          }
+        } catch (e) { console.warn('ExitBarrierChanged handler', e); }
+      });
+
+      this.hubConnection.on('EntryBarrierChanged', (val: any) => {
+        try { console.debug('SignalR EntryBarrierChanged', val); const b = (val || '').toString().toUpperCase(); if (b === 'OPEN') this.openEntryBarrier(); else this.closeEntryBarrier(); } catch (e) { console.warn('EntryBarrierChanged handler', e); }
+      });
+
+      this.hubConnection.on('EntrySignalChanged', (val: any) => {
+        try { console.debug('SignalR EntrySignalChanged', val); const es = (val || '').toString().toUpperCase(); this.setEntrySignal(es === 'GREEN' ? SignalState.GREEN : SignalState.RED); } catch (e) { console.warn('EntrySignalChanged handler', e); }
+      });
+
+      // Keep previous VehicleAdded handler for compatibility
       this.hubConnection.on('VehicleAdded', (payload: any) => {
         try {
           const plate = payload?.plateNumber || payload?.plate || payload?.PlateNumber;
           if (plate) {
-            // start a processing cycle in the frontend driven by the received plate
-            this.simulateSingleVehicleCycle(plate);
-            // also add to local logs so UI shows it immediately
             this.addLog({ plate: plate, status: payload.status || 'processed', time: payload.time || new Date(), weight: payload.weight ?? null });
           }
         } catch (e) { console.warn('VehicleAdded handler', e); }
+      });
+
+      // New: handle VehicleProcessed notifications from backend
+      this.hubConnection.on('VehicleProcessed', (payload: any) => {
+        try {
+          const plate = payload?.plate || payload?.plateNumber || payload?.PlateNumber;
+          const status = (payload?.status || '').toString().toUpperCase();
+          const weight = payload?.weight ?? null;
+          if (status === 'ACCEPTED') {
+            this.addLog({ plate, status: 'ACCEPTED', time: new Date(), weight });
+            // open entry barrier for accepted vehicles, then close after a short delay
+            this.openEntryBarrier();
+            setTimeout(() => { this.closeEntryBarrier(); }, 3000);
+          } else {
+            this.addLog({ plate, status: 'REJECTED', time: new Date(), weight });
+            this.updateLedMessage(`REJECTED: ${payload?.reason || ''}`);
+          }
+        } catch (e) { console.warn('VehicleProcessed handler', e); }
       });
 
       this.hubConnection.start().catch((err: any) => console.warn('SignalR start failed', err));
@@ -291,45 +398,50 @@ export class ScadaService {
   /**
    * Open entry barrier with animation
    */
-  openEntryBarrier(cycleSeq?: number): void {
+  openEntryBarrier(cycleSeq?: number): any {
     // Prevent opening if exit barrier is open
     if (this.exitBarrier().state === BarrierState.OPEN) {
       this.updateLedMessage('Cannot open entry: Exit barrier is open');
-      return;
+      return this.http.post<any>(`${this.baseApi}/barrier/entry/open`, {});
     }
 
     this.entryBarrierState.next(BarrierState.OPEN);
     this.animateBarrier('entry', true, cycleSeq);
+    // notify backend but don't block UI animation
+    return this.http.post<any>(`${this.baseApi}/barrier/entry/open`, {});
   }
 
   /**
    * Close entry barrier with animation
    */
-  closeEntryBarrier(cycleSeq?: number): void {
+  closeEntryBarrier(cycleSeq?: number): any {
     this.entryBarrierState.next(BarrierState.CLOSED);
     this.animateBarrier('entry', false, cycleSeq);
+    return this.http.post<any>(`${this.baseApi}/barrier/entry/close`, {});
   }
 
   /**
    * Open exit barrier with animation
    */
-  openExitBarrier(cycleSeq?: number): void {
+  openExitBarrier(cycleSeq?: number): any {
     // Prevent opening if entry barrier is open
     if (this.entryBarrier().state === BarrierState.OPEN) {
       this.updateLedMessage('Cannot open exit: Entry barrier is open');
-      return;
+      return this.http.post<any>(`${this.baseApi}/barrier/exit/open`, {});
     }
 
     this.exitBarrierState.next(BarrierState.OPEN);
     this.animateBarrier('exit', true, cycleSeq);
+    return this.http.post<any>(`${this.baseApi}/barrier/exit/open`, {});
   }
 
   /**
    * Close exit barrier with animation
    */
-  closeExitBarrier(cycleSeq?: number): void {
+  closeExitBarrier(cycleSeq?: number): any {
     this.exitBarrierState.next(BarrierState.CLOSED);
     this.animateBarrier('exit', false, cycleSeq);
+    return this.http.post<any>(`${this.baseApi}/barrier/exit/close`, {});
   }
 
   /**
