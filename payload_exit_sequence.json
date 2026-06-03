@@ -1,27 +1,44 @@
 {
-  "stage": "EXIT_PROCESS",
-  "steps": [
+  "trigger": "weigh_complete",
+  "stage": "exit",
+
+  "exit_sequence": [
     {
-      "step": "EXIT_OPEN",
-      "entrySignal": "RED",
-      "exitSignal": "GREEN",
-      "entryBarrier": "CLOSED",
-      "exitBarrier": "OPEN",
-      "currentTruckPlate": "ABC-1234",
-      "currentWeight": 28500,
-      "ledMessage": "PROCEED TO EXIT",
-      "delayMs": 1200
+      "step": 1,
+      "action": "validate_stage",
+      "expected": "exit"
     },
     {
-      "step": "EXIT_CLOSE",
-      "entrySignal": "RED",
-      "exitSignal": "RED",
-      "entryBarrier": "CLOSED",
-      "exitBarrier": "CLOSED",
-      "currentTruckPlate": "ABC-1234",
-      "currentWeight": 28500,
-      "ledMessage": "EXIT COMPLETED",
-      "delayMs": 600
+      "step": 2,
+      "action": "set_signal",
+      "signal": "exit",
+      "value": "green"
+    },
+    {
+      "step": 3,
+      "action": "open_exit_barrier",
+      "delay_ms": 500
+    },
+    {
+      "step": 4,
+      "action": "wait_for_vehicle_pass",
+      "timeout_ms": 15000
+    },
+    {
+      "step": 5,
+      "action": "close_exit_barrier",
+      "delay_ms": 1000
+    },
+    {
+      "step": 6,
+      "action": "set_signal",
+      "signal": "exit",
+      "value": "red"
+    },
+    {
+      "step": 7,
+      "action": "reset_state",
+      "next": "idle"
     }
   ]
 }

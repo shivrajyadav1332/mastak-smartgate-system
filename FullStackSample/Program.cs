@@ -16,6 +16,9 @@ builder.Services.AddSignalR();
 // Device service (singleton) that simulates devices and maintains state
 builder.Services.AddSingleton<DeviceService>();
 
+// Device Configuration Service (singleton) for managing hardware device IP addresses
+builder.Services.AddSingleton<DeviceConfigurationService>();
+
 // Configure EF Core with SQLite
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite("Data Source=vehicles.db"));

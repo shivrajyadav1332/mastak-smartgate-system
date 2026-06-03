@@ -1,0 +1,108 @@
+<div class="device-monitor-container">
+  <div class="header">
+    <h1>📊 Device Connectivity Monitor</h1>
+    <p>Real-time monitoring of all hardware components</p>
+  </div>
+
+  <!-- Error Message -->
+  <div *ngIf="error" class="alert alert-error">
+    <span>{{ error }}</span>
+    <button (click)="error = null" class="close-btn">×</button>
+  </div>
+
+  <!-- Stats Dashboard -->
+  <div class="stats-dashboard">
+    <div class="stat-card">
+      <div class="stat-value">{{ stats.total }}</div>
+      <div class="stat-label">Total Devices</div>
+      <div class="stat-icon">🔧</div>
+    </div>
+
+    <div class="stat-card stat-online">
+      <div class="stat-value">{{ stats.online }}</div>
+      <div class="stat-label">Online</div>
+      <div class="stat-icon">✅</div>
+    </div>
+
+    <div class="stat-card stat-offline">
+      <div class="stat-value">{{ stats.offline }}</div>
+      <div class="stat-label">Offline</div>
+      <div class="stat-icon">❌</div>
+    </div>
+
+    <div class="stat-card" [ngClass]="getHealthClass()">
+      <div class="stat-value">{{ stats.uptime }}</div>
+      <div class="stat-label">System Uptime</div>
+      <div class="stat-icon">📈</div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls">
+    <button (click)="refreshNow()" class="btn btn-refresh" [disabled]="loading">
+      🔄 Refresh Now
+    </button>
+
+    <label class="auto-refresh-toggle">
+      <input type="checkbox" [(ngModel)]="autoRefresh" (change)="toggleAutoRefresh()">
+      <span>Auto-refresh every 30 seconds</span>
+    </label>
+
+    <div class="last-updated">
+      Last updated: {{ lastRefreshed | date:'short' }}
+    </div>
+  </div>
+
+  <!-- Loading Indicator -->
+  <div *ngIf="loading" class="loading">
+    <div class="spinner"></div>
+    Checking device connectivity...
+  </div>
+
+  <!-- Status Table -->
+  <div *ngIf="!loading" class="status-table-container">
+    <table class="status-table">
+      <thead>
+        <tr>
+          <th>Device Name</th>
+          <th>Type</th>
+          <th>IP Address</th>
+          <th>Status</th>
+          <th>Response Time</th>
+          <th>Last Checked</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let status of statuses" [ngClass]="getStatusClass(status.status)">
+          <td>
+            <span class="device-name">{{ status.deviceName }}</span>
+          </td>
+          <td>
+            <span class="device-type">{{ status.deviceId.split('_')[0].toUpperCase() }}</span>
+          </td>
+          <td>
+            <span class="ip-address">{{ status.deviceId }}</span>
+          </td>
+          <td>
+            <span class="status-badge" [ngClass]="'badge-' + status.status.toLowerCase()">
+              {{ getStatusIcon(status.status) }} {{ status.status }}
+            </span>
+          </td>
+          <td>
+            <span class="response-time" [ngClass]="status.responseTime > 2000 ? 'slow' : ''">
+              {{ status.responseTime }}ms
+            </span>
+          </td>
+          <td>
+            <span class="timestamp">{{ status.checkedAt | date:'HH:mm:ss' }}</span>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Empty State -->
+    <div *ngIf="statuses.length === 0" class="empty-state">
+      <p>No active devices found</p>
+    </div>
+  </div>
+</div>

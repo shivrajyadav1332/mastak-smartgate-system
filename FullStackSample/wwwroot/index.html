@@ -27,6 +27,7 @@
               <div>Exit Signal: <span id="exitSignal">—</span></div>
               <div>Entry Barrier: <span id="entryBarrier">—</span></div>
               <div>Exit Barrier: <span id="exitBarrier">—</span></div>
+              <div>On Scale: <span id="onScale">—</span></div>
               <div>Weight: <span id="weight">—</span></div>
               <div>LED: <span id="ledMessage">—</span></div>
             </div>
@@ -89,6 +90,7 @@
                 document.getElementById('exitSignal').innerText = (payload.exitSignal || '—');
                 document.getElementById('entryBarrier').innerText = (payload.entryBarrier || '—');
                 document.getElementById('exitBarrier').innerText = (payload.exitBarrier || '—');
+                document.getElementById('onScale').innerText = (payload.onScale ? 'YES' : 'NO');
                 document.getElementById('weight').innerText = (payload.currentWeight || '—');
                 document.getElementById('ledMessage').innerText = (payload.ledMessage || '—');
               } catch(e) { console.warn('SystemStateChanged handler failed', e); }
@@ -97,6 +99,7 @@
             connection.on('ExitSignalChanged', v => { try { document.getElementById('exitSignal').innerText = v || '—'; } catch(e){} });
             connection.on('ExitBarrierChanged', v => { try { document.getElementById('exitBarrier').innerText = v || '—'; } catch(e){} });
             connection.on('EntryBarrierChanged', v => { try { document.getElementById('entryBarrier').innerText = v || '—'; } catch(e){} });
+            connection.on('OnScaleChanged', v => { try { document.getElementById('onScale').innerText = (v ? 'YES' : 'NO'); } catch(e){} });
 
             connection.start().catch(err => console.warn('SignalR start failed', err));
           } catch (e) { console.warn('SignalR init failed', e); }

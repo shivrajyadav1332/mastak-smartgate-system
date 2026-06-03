@@ -42,6 +42,21 @@ namespace FullStackSample.Controllers
             return Ok(dto);
         }
 
+        // Endpoint for UI or external sensor to notify that vehicle has passed the exit
+        [HttpPost("pass")]
+        public IActionResult NotifyPassed()
+        {
+            try
+            {
+                _device.NotifyVehiclePassed();
+                return Ok(new { status = "NOTIFIED" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { status = "ERROR", message = ex.Message });
+            }
+        }
+
         [HttpPut("{id}")]
         public IActionResult Put(int id, [FromBody] VehicleCreateDto? body)
         {

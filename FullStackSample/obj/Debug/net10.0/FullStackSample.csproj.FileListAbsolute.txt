@@ -127,4 +127,12 @@ C:\Users\shivra163872\Project\mastak-smartgate-system\FullStackSample\bin\Debug\
 C:\Users\shivra163872\Project\mastak-smartgate-system\FullStackSample\bin\Debug\net10.0\appsettings.json
 C:\Users\shivra163872\Project\mastak-smartgate-system\FullStackSample\bin\Debug\net10.0\ExcelDataReader.dll
 C:\Users\shivra163872\Project\mastak-smartgate-system\FullStackSample\bin\Debug\net10.0\ExcelDataReader.DataSet.dll
-C:\Users\shivra163872\Project\mastak-smartgate-system\FullStackSample\obj\Debug\net10.0\compressed\b6b56oray6-{0}-nfhk01dnp9-nfhk01dnp9.gz
+C:\Users\shivra163872\Project\mastak-smartgate-system\FullStackSample\obj\Debug\net10.0\compressed\b6b56oray6-{0}-bg6hhibq3g-bg6hhibq3g.gz
+C:\Users\shivra163872\Project\mastak-smartgate-system\artifacts\fullstack-verify\appsettings.json
+C:\Users\shivra163872\Project\mastak-smartgate-system\artifacts\fullstack-verify\payload.json
+C:\Users\shivra163872\Project\mastak-smartgate-system\artifacts\fullstack-verify\FullStackSample.staticwebassets.runtime.json
+C:\Users\shivra163872\Project\mastak-smartgate-system\artifacts\fullstack-verify\FullStackSample.staticwebassets.endpoints.json
+C:\Users\shivra163872\Project\mastak-smartgate-system\artifacts\fullstack-verify\FullStackSample.deps.json
+C:\Users\shivra163872\Project\mastak-smartgate-system\artifacts\fullstack-verify\FullStackSample.runtimeconfig.json
+C:\Users\shivra163872\Project\mastak-smartgate-system\artifacts\fullstack-verify\FullStackSample.dll
+C:\Users\shivra163872\Project\mastak-smartgate-system\artifacts\fullstack-verify\FullStackSample.pdb

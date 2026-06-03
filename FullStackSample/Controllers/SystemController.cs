@@ -25,12 +25,25 @@ namespace FullStackSample.Controllers
         [HttpGet("state")]
         public IActionResult Status()
         {
+            // Ensure 'stage' is always present for clients; also include an eventName mapping
+            string stageVal = string.IsNullOrEmpty(_device.Stage) ? "IDLE" : _device.Stage;
+            string? eventName = stageVal switch
+            {
+                "ENTRY" => "VEHICLE_ENTRY",
+                "WEIGHING" => "WEIGHING",
+                "WEIGH_COMPLETE" => "WEIGH_COMPLETE",
+                _ => "IDLE"
+            };
+
             return Ok(new
             {
+                eventName = eventName,
+                stage = stageVal,
                 entrySignal = _device.EntrySignal,
                 exitSignal = _device.ExitSignal,
                 entryBarrier = _device.EntryBarrier,
                 exitBarrier = _device.ExitBarrier,
+                onScale = _device.OnScale,
                 currentTruckPlate = _device.CurrentTruckPlate,
                 currentWeight = _device.CurrentWeight,
                 mode = _device.Mode,

@@ -1,0 +1,227 @@
+<div class="device-config-container">
+  <div class="header">
+    <h1>🔧 Hardware Device Configuration</h1>
+    <p>Manage IP addresses and configurations for all system components</p>
+  </div>
+
+  <!-- Error Message -->
+  <div *ngIf="error" class="alert alert-error">
+    <span>{{ error }}</span>
+    <button (click)="error = null" class="close-btn">×</button>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls-section">
+    <button (click)="openAddModal()" class="btn btn-primary" [disabled]="loading">
+      ➕ Add New Device
+    </button>
+    
+    <div class="filter-section">
+      <label>Filter by Type:</label>
+      <select [(ngModel)]="selectedDeviceType" (change)="onDeviceTypeChange()" class="select-input">
+        <option value="ALL">All Devices</option>
+        <option *ngFor="let type of deviceTypes" [value]="type">{{ type }}</option>
+      </select>
+
+      <input 
+        type="text" 
+        [(ngModel)]="searchQuery" 
+        (input)="onSearch()"
+        placeholder="Search by name or IP..."
+        class="search-input"
+      >
+    </div>
+  </div>
+
+  <!-- Loading Indicator -->
+  <div *ngIf="loading" class="loading">
+    <div class="spinner"></div>
+    Loading...
+  </div>
+
+  <!-- Devices Grid -->
+  <div class="devices-grid" *ngIf="!loading">
+    <div *ngFor="let device of filteredDevices" class="device-card" [ngClass]="getStatusClass(device)">
+      <div class="card-header">
+        <div class="device-icon">{{ getTypeIcon(device.deviceType) }}</div>
+        <div class="device-name">
+          <h3>{{ device.deviceName }}</h3>
+          <span class="device-type">{{ device.deviceType }}</span>
+        </div>
+        <div class="status-badge">
+          <span [ngClass]="device.isActive ? 'badge-active' : 'badge-inactive'">
+            {{ device.isActive ? 'ACTIVE' : 'INACTIVE' }}
+          </span>
+        </div>
+      </div>
+
+      <div class="card-body">
+        <div class="info-row">
+          <label>IP Address:</label>
+          <span class="ip-address">{{ device.ipAddress }}</span>
+        </div>
+        <div class="info-row">
+          <label>Port:</label>
+          <span>{{ device.port }}</span>
+        </div>
+        <div class="info-row">
+          <label>Protocol:</label>
+          <span class="protocol-badge">{{ device.protocol }}</span>
+        </div>
+        <div *ngIf="device.description" class="info-row">
+          <label>Description:</label>
+          <span>{{ device.description }}</span>
+        </div>
+        <div class="info-row">
+          <label>Last Updated:</label>
+          <span>{{ device.updatedAt || device.createdAt | date:'short' }}</span>
+        </div>
+      </div>
+
+      <div class="card-actions">
+        <button 
+          (click)="testConnectivity(device)" 
+          class="btn btn-small btn-test"
+          [disabled]="loading"
+          title="Test device connectivity"
+        >
+          🔗 Test
+        </button>
+        <button 
+          (click)="openEditModal(device)" 
+          class="btn btn-small btn-edit"
+          [disabled]="loading"
+          title="Edit device configuration"
+        >
+          ✏️ Edit
+        </button>
+        <button 
+          (click)="deleteDevice(device)" 
+          class="btn btn-small btn-delete"
+          [disabled]="loading"
+          title="Delete device"
+        >
+          🗑️ Delete
+        </button>
+      </div>
+    </div>
+
+    <!-- Empty State -->
+    <div *ngIf="filteredDevices.length === 0" class="empty-state">
+      <p>No devices found</p>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div *ngIf="showModal" class="modal-overlay" (click)="closeModal()">
+    <div class="modal" (click)="$event.stopPropagation()">
+      <div class="modal-header">
+        <h2>{{ isEditMode ? 'Edit Device' : 'Add New Device' }}</h2>
+        <button class="close-btn" (click)="closeModal()">×</button>
+      </div>
+
+      <form class="modal-body" (ngSubmit)="saveDevice()">
+        <div class="form-group">
+          <label for="deviceName">Device Name <span class="required">*</span></label>
+          <input 
+            id="deviceName"
+            type="text" 
+            [(ngModel)]="selectedDevice.deviceName" 
+            name="deviceName"
+            placeholder="e.g., ANPR Camera - Entry"
+            required
+            class="form-input"
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="deviceType">Device Type <span class="required">*</span></label>
+          <select 
+            id="deviceType"
+            [(ngModel)]="selectedDevice.deviceType" 
+            name="deviceType"
+            required
+            class="form-input"
+          >
+            <option *ngFor="let type of deviceTypes" [value]="type">{{ type }}</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="ipAddress">IP Address <span class="required">*</span></label>
+          <input 
+            id="ipAddress"
+            type="text" 
+            [(ngModel)]="selectedDevice.ipAddress" 
+            name="ipAddress"
+            placeholder="e.g., 192.168.1.100"
+            pattern="^(\d{1,3}\.){3}\d{1,3}$"
+            required
+            class="form-input"
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="port">Port Number</label>
+          <input 
+            id="port"
+            type="number" 
+            [(ngModel)]="selectedDevice.port" 
+            name="port"
+            placeholder="80"
+            min="1"
+            max="65535"
+            class="form-input"
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="protocol">Protocol</label>
+          <select 
+            id="protocol"
+            [(ngModel)]="selectedDevice.protocol" 
+            name="protocol"
+            class="form-input"
+          >
+            <option value="HTTP">HTTP</option>
+            <option value="HTTPS">HTTPS</option>
+            <option value="TCP">TCP</option>
+            <option value="MODBUS">MODBUS</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="description">Description</label>
+          <textarea 
+            id="description"
+            [(ngModel)]="selectedDevice.description" 
+            name="description"
+            placeholder="Optional device description"
+            rows="3"
+            class="form-input"
+          ></textarea>
+        </div>
+
+        <div class="form-group checkbox">
+          <input 
+            id="isActive"
+            type="checkbox" 
+            [(ngModel)]="selectedDevice.isActive" 
+            name="isActive"
+            class="form-checkbox"
+          >
+          <label for="isActive">Active</label>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" (click)="closeModal()" class="btn btn-secondary">
+            Cancel
+          </button>
+          <button type="submit" class="btn btn-primary" [disabled]="loading">
+            {{ isEditMode ? 'Update Device' : 'Create Device' }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

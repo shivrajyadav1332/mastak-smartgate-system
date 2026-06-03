@@ -31,10 +31,12 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
   exitSignal = 'RED';
   currentTruck = '';
   weight = 0;
+  currentWeight = 0;
   displayedWeight = 0;
   plateNumber = '';
   manualWeight = 1500;
   currentPlate = '';
+  currentTruckPlate = '';
   truckPosition = 0; // 0 = start, 50 = center, 100 = exit
   barrierEntry = BarrierState.CLOSED;
   barrierExit = BarrierState.CLOSED;
@@ -55,10 +57,16 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
   // Allowed plates editor
   allowedPlatesText = '';
   allowedPlatesMessage = '';
+  exitAutoCloseSeconds = 30;
+  exitAutoCloseMessage = '';
 
   constructor(protected scadaService: ScadaService) {}
 
   ngOnInit(): void {
+    try {
+      const ms = this.scadaService.getExitAutoCloseMs();
+      this.exitAutoCloseSeconds = Math.round((ms || 0) / 1000);
+    } catch (e) {}
     // Subscribe to logs (BehaviorSubject) for immediate updates
     this.logsSub = this.scadaService.getVehicleLogs().subscribe((list: any[]) => {
       this.logs = list || [];
@@ -82,6 +90,49 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
 
     // load allowed plates into editor
     this.loadAllowedPlates();
+    // Subscribe to backend-controlled state updates (preferred canonical event)
+    try {
+      if ((this.scadaService as any).hubConnection) {
+        (this.scadaService as any).hubConnection.on('ReceiveSystemStatus', (data: any) => {
+          try {
+            console.log('STATE UPDATE:', data);
+            this.entrySignal = data.entrySignal || this.entrySignal;
+            this.exitSignal = data.exitSignal || this.exitSignal;
+            this.barrierEntry = data.entryBarrier || this.barrierEntry;
+            this.barrierExit = data.exitBarrier || this.barrierExit;
+            this.weight = data.currentWeight || 0;
+            this.currentTruckPlate = data.currentTruckPlate || '';
+            this.ledMessage = data.ledMessage || '';
+          } catch (e) { console.warn('ReceiveSystemStatus handler failed', e); }
+        });
+      }
+    } catch (e) { }
+  }
+
+  isExitAutoCloseValid(): boolean {
+    const sec = Number(this.exitAutoCloseSeconds);
+    if (isNaN(sec) || !isFinite(sec)) return false;
+    return sec >= 0 && sec <= 600; // 0..600 seconds allowed
+  }
+
+  onExitAutoCloseInput(): void {
+    this.exitAutoCloseMessage = '';
+  }
+
+  setExitAutoCloseSeconds(): void {
+    const sec = Number(this.exitAutoCloseSeconds);
+    if (!this.isExitAutoCloseValid()) {
+      this.exitAutoCloseMessage = 'Enter a number 0–600 (seconds).';
+      return;
+    }
+
+    try {
+      this.scadaService.setExitAutoCloseMs(Math.max(0, Math.floor(sec * 1000)));
+      this.exitAutoCloseMessage = 'Saved';
+      setTimeout(() => this.exitAutoCloseMessage = '', 2000);
+    } catch (e) {
+      this.exitAutoCloseMessage = 'Save failed';
+    }
   }
 
   ngOnDestroy(): void {
@@ -121,6 +172,16 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
       this.paMessage = pa?.message || '';
 
       this.vehicleStatusText = vs;
+      // If exit barrier is open and truck is near exit, trigger exit detection (simulate sensor)
+      try {
+        if (this.barrierExit === BarrierState.OPEN && this.truckPosition >= 80) {
+          // only trigger once per approach
+          if (this.scadaService && (this.scadaService as any).awaitingExitPass) {
+            // call simulateExitVehicleDetection to notify backend via ScadaService
+            try { this.scadaService.simulateExitVehicleDetection(); } catch (e) { }
+          }
+        }
+      } catch (e) { }
     } catch (e) {
       // ignore transient read errors
     }
@@ -394,62 +455,13 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
     if (!vehicle) return;
     if (this.isProcessingVehicle) return;
     this.isProcessingVehicle = true;
-
-    const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
-
     try {
+      // UI no longer performs timing/sequencing — backend controls the exit flow and sends
+      // `ReceiveSystemStatus` events. Here we only update minimal local state to reflect
+      // arrival; animations are driven by SignalR payloads.
       this.vehicleStatusText = vehicle.status;
       this.currentPlate = vehicle.plateNumber || vehicle.plate || '';
-
-      // STEP 1: indicate green and open entry barrier
-      this.scadaService.setEntrySignal(SignalState.GREEN);
-      await sleep(150);
-      this.scadaService.openEntryBarrier();
-      // wait for barrier animation to progress
-      await sleep(1000);
-
-      // STEP 2: move truck to center
-      this.animateTruckTo(50, 1000);
-      await sleep(1200);
-
-      // STEP 3: close entry barrier
-      this.scadaService.closeEntryBarrier();
-      this.scadaService.setEntrySignal(SignalState.RED);
-      await sleep(300);
-
-      // STEP 4: start weighing (service will simulate and set weighbridge weight)
-      this.scadaService.startWeighing();
-      // wait for weighing to complete (service simulate takes ~3s)
-      await sleep(3200);
-      const wb = this.scadaService.weighbridge();
-
-      // push a log entry for this vehicle (ensures `plateNumber` property exists)
-      this.scadaService.pushLog({ plateNumber: this.currentPlate, status: vehicle.status, time: new Date(), weight: wb.weight || null });
-
-      // STEP 5: decision: ACCEPTED -> open exit and let truck exit, else return
-      if ((vehicle.status || '').toString().toUpperCase() === 'ACCEPTED') {
-        this.scadaService.setExitSignal(SignalState.GREEN);
-        await sleep(150);
-        this.scadaService.openExitBarrier();
-        await sleep(600);
-
-        this.animateTruckTo(100, 1000);
-        await sleep(1400);
-
-        // finalize exit
-        this.scadaService.closeExitBarrier();
-        this.scadaService.setExitSignal(SignalState.RED);
-      } else {
-        // rejected: send truck back to start
-        await sleep(200);
-        this.animateTruckTo(0, 800);
-        await sleep(900);
-      }
-
-      // cleanup: reset weighbridge and messages
-      this.scadaService.resetWeighbridge();
-      this.scadaService.updateLedMessage('NO LED MESSAGE');
-
+      // leave isProcessingVehicle true until backend resets state (optional)
     } catch (e) {
       console.warn('processVehicle failed', e);
     } finally {

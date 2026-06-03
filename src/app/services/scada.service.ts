@@ -116,8 +116,8 @@ export class ScadaService {
   getAlertMessage(): BehaviorSubject<string> {
     return this.alertMessage;
   }
-  // Base API URL for backend
-  private readonly baseApi = 'http://localhost:5001/api';
+  // Base API URL for backend (dev-server proxy handles forwarding)
+  private readonly baseApi = '/api';
 
   // Legacy helper that UI may use to push an internal log (keeps BehaviorSubject semantics)
   // Keep existing allowed-plates and vehicles helpers for backward compatibility
@@ -194,8 +194,19 @@ export class ScadaService {
   // Continuous mode: when enabled, do not set VehicleStatus.IDLE between cycles
   private continuousMode = false;
 
-  private apiUrl = 'http://localhost:5001/api/vehicle';
-  private hubConnection: signalR.HubConnection | null = null;
+  private apiUrl = '/api/vehicle';
+  public hubConnection: signalR.HubConnection | null = null;
+
+  // Auto-close timeout handle for exit barrier (ms)
+  private exitAutoCloseTimeout: any = null;
+  // Configurable delay for auto-closing exit barrier (milliseconds)
+  private exitAutoCloseMs = 30000;
+  exitAutoCloseTimer = signal<number>(0);
+
+  // Flag set when backend opens exit barrier and we are expecting a vehicle to pass
+  private awaitingExitPass = false;
+  // When true, backend SignalR events own exit barrier state (avoid local overrides)
+  private backendExitSequenceActive = false;
 
   // Vehicle trigger event observable for other components to subscribe
   private vehicleTrigger = new Subject<string>();
@@ -225,6 +236,31 @@ export class ScadaService {
       console.warn('failed to load persisted logs', e);
     }
 
+    // Load persisted exit auto-close delay (ms) if present
+    try {
+      const s = localStorage.getItem('scada.exitAutoCloseMs');
+      if (s) {
+        const parsed = Number(s);
+        if (!isNaN(parsed)) this.exitAutoCloseMs = Math.max(0, parsed);
+      }
+    } catch (e) { }
+
+    // Try to load the server-side configured exit auto-close value (best-effort)
+    try {
+      this.http.get<any>(`${this.baseApi}/barrier/config/exit-autoclose`).subscribe({
+        next: (res: any) => {
+          try {
+            if (res && res.exitAutoCloseMs != null) {
+              const ms = Number(res.exitAutoCloseMs) || 0;
+              this.exitAutoCloseMs = Math.max(0, ms);
+              try { localStorage.setItem('scada.exitAutoCloseMs', String(this.exitAutoCloseMs)); } catch (e) {}
+            }
+          } catch (e) { }
+        },
+        error: () => { /* ignore */ }
+      });
+    } catch (e) { }
+
     // Try to connect to backend SignalR hub for real-time events
     this.initSignalR();
   }
@@ -237,13 +273,13 @@ export class ScadaService {
   private initSignalR() {
     try {
       // Use backend SignalR hub path exposed by the .NET API
-      const hubUrl = this.baseApi.replace('/api','') + '/hub/vehicle';
+      const hubUrl = '/hub/vehicle';
       this.hubConnection = new signalR.HubConnectionBuilder()
         .withUrl(hubUrl)
         .withAutomaticReconnect()
         .build();
 
-      // Server will broadcast 'SystemStateChanged' with the full system state
+      // Server will broadcast 'SystemStateChanged' and 'ReceiveSystemStatus' with the full system state
       this.hubConnection.on('SystemStateChanged', (payload: any) => {
         try {
           if (!payload) return;
@@ -262,7 +298,16 @@ export class ScadaService {
 
           // Weighbridge
           const w = Number(payload.currentWeight || 0) || 0;
-          this.weighbridge.update(s => ({ ...s, weight: w }));
+          this.weighbridge.update(s => ({ ...s, weight: w, vehicleDetected: !!payload.onScale }));
+
+          // Map onScale to weighbridge status
+          if (payload.onScale) {
+            this.weighbridge.update(s => ({ ...s, status: WeighbridgeStatus.WEIGHING }));
+          } else if (w > 0) {
+            this.weighbridge.update(s => ({ ...s, status: WeighbridgeStatus.COMPLETE }));
+          } else {
+            this.weighbridge.update(s => ({ ...s, status: WeighbridgeStatus.WAITING }));
+          }
 
           // LED + current plate
           this.updateLedMessage(payload.ledMessage || '');
@@ -271,6 +316,51 @@ export class ScadaService {
           }
         } catch (e) {
           console.warn('SystemStateChanged handler failed', e);
+        }
+      });
+
+      // New canonical ReceiveSystemStatus payload handler (preferred)
+      this.hubConnection.on('ReceiveSystemStatus', (payload: any) => {
+        try {
+          if (!payload) return;
+          console.debug('SignalR ReceiveSystemStatus received', payload);
+          // Map signals
+          const es = (payload.entrySignal || '').toString().toUpperCase();
+          const xs = (payload.exitSignal || '').toString().toUpperCase();
+          this.setEntrySignal(es === 'GREEN' ? SignalState.GREEN : SignalState.RED);
+          this.setExitSignal(xs === 'GREEN' ? SignalState.GREEN : SignalState.RED);
+
+          // Barriers
+          const entryBarrier = (payload.entryBarrier || '').toString().toUpperCase();
+          const exitBarrier = (payload.exitBarrier || '').toString().toUpperCase();
+          this.entryBarrier.update(b => ({ ...b, state: entryBarrier === 'OPEN' ? BarrierState.OPEN : BarrierState.CLOSED }));
+          this.exitBarrier.update(b => ({ ...b, state: exitBarrier === 'OPEN' ? BarrierState.OPEN : BarrierState.CLOSED }));
+
+          // Weighbridge
+          const w = Number(payload.currentWeight || 0) || 0;
+          this.weighbridge.update(s => ({ ...s, weight: w, vehicleDetected: !!payload.onScale }));
+
+          if (payload.onScale) {
+            this.weighbridge.update(s => ({ ...s, status: WeighbridgeStatus.WEIGHING }));
+          } else if (w > 0) {
+            this.weighbridge.update(s => ({ ...s, status: WeighbridgeStatus.COMPLETE }));
+          } else {
+            this.weighbridge.update(s => ({ ...s, status: WeighbridgeStatus.WAITING }));
+          }
+
+          // LED + current plate
+          this.updateLedMessage(payload.ledMessage || '');
+          if (payload.currentTruckPlate) {
+            try { this.pushLog({ plate: payload.currentTruckPlate, status: 'processed', time: new Date(), weight: w }); } catch (e) {}
+          }
+
+          // If backend indicates exit barrier is open, set awaiting flag so UI can notify pass when sensor/ANPR detects
+          try {
+            const exitBarrierUpper = (payload.exitBarrier || '').toString().toUpperCase();
+            if (exitBarrierUpper === 'OPEN') this.awaitingExitPass = true;
+          } catch (e) {}
+        } catch (e) {
+          console.warn('ReceiveSystemStatus handler failed', e);
         }
       });
 
@@ -283,21 +373,37 @@ export class ScadaService {
         } catch (e) { console.warn('ExitSignalChanged handler', e); }
       });
 
+      this.hubConnection.on('ExitAutoCloseTimerChanged', (val: any) => {
+        const remaining = Math.max(0, Number(val) || 0);
+        this.exitAutoCloseTimer.set(remaining);
+      });
+
+      this.hubConnection.on('ExitBarrierOpened', () => {
+        this.backendExitSequenceActive = true;
+        this.awaitingExitPass = true;
+        this.applyExitBarrierState(BarrierState.OPEN);
+      });
+
+      this.hubConnection.on('ExitBarrierClosed', () => {
+        this.awaitingExitPass = false;
+        this.backendExitSequenceActive = false;
+        this.exitAutoCloseTimer.set(0);
+        this.applyExitBarrierState(BarrierState.CLOSED);
+      });
+
       this.hubConnection.on('ExitBarrierChanged', (val: any) => {
         try {
           console.debug('SignalR ExitBarrierChanged', val);
           const b = (val || '').toString().toUpperCase();
-          // If entry barrier is open, close it first then open exit to avoid collision
           if (b === 'OPEN') {
-            if (this.entryBarrier().state === BarrierState.OPEN) {
-              // close entry then open exit after animation completes
-              this.closeEntryBarrier();
-              setTimeout(() => { this.openExitBarrier(); }, 1100);
-            } else {
-              this.openExitBarrier();
-            }
+            this.backendExitSequenceActive = true;
+            try { this.awaitingExitPass = true; } catch (e) {}
+            this.applyExitBarrierState(BarrierState.OPEN);
           } else {
-            this.closeExitBarrier();
+            try { this.awaitingExitPass = false; } catch (e) {}
+            this.backendExitSequenceActive = false;
+            this.exitAutoCloseTimer.set(0);
+            this.applyExitBarrierState(BarrierState.CLOSED);
           }
         } catch (e) { console.warn('ExitBarrierChanged handler', e); }
       });
@@ -318,6 +424,58 @@ export class ScadaService {
             this.addLog({ plate: plate, status: payload.status || 'processed', time: payload.time || new Date(), weight: payload.weight ?? null });
           }
         } catch (e) { console.warn('VehicleAdded handler', e); }
+      });
+
+      // New: handle concise device events emitted by backend (VEHICLE_ENTRY, WEIGHING, WEIGH_COMPLETE, EXIT_OPEN, EXIT_CLOSE)
+      this.hubConnection.on('DeviceEvent', (payload: any) => {
+        try {
+          if (!payload) return;
+          const ev = (payload.event || payload.eventName || payload['@event'] || '').toString().toUpperCase();
+          console.debug('SignalR DeviceEvent received', ev, payload);
+
+          if (ev === 'VEHICLE_ENTRY' || ev === 'WEIGHING') {
+            // force exit closed while vehicle is entering/weighing
+            try {
+              this.setExitSignal(SignalState.RED);
+              this.exitBarrierState.next(BarrierState.CLOSED);
+              // animate immediate close
+              this.animateBarrier('exit', false);
+            } catch (e) { console.warn('DeviceEvent VEHICLE_ENTRY handler failed', e); }
+          }
+
+          if (ev === 'WEIGH_COMPLETE') {
+            try { this.setExitSignal(SignalState.RED); } catch (e) { console.warn('DeviceEvent WEIGH_COMPLETE handler failed', e); }
+          }
+
+          if (ev === 'EXIT_OPEN') {
+            try {
+              this.backendExitSequenceActive = true;
+              this.setExitSignal(SignalState.GREEN);
+              this.applyExitBarrierState(BarrierState.OPEN);
+            } catch (e) { console.warn('DeviceEvent EXIT_OPEN handler failed', e); }
+          }
+
+          if (ev === 'EXIT_CLOSE') {
+            try {
+              this.setExitSignal(SignalState.RED);
+              this.exitAutoCloseTimer.set(0);
+              this.backendExitSequenceActive = false;
+              this.applyExitBarrierState(BarrierState.CLOSED);
+            } catch (e) { console.warn('DeviceEvent EXIT_CLOSE handler failed', e); }
+          }
+        } catch (e) { console.warn('DeviceEvent handler failed', e); }
+      });
+
+      // Position sensor explicit event (backend broadcasts OnScaleChanged)
+      this.hubConnection.on('OnScaleChanged', (val: any) => {
+        try {
+          const onScale = !!val;
+          this.weighbridge.update(w => ({ ...w, vehicleDetected: onScale }));
+          if (onScale) this.weighbridge.update(w => ({ ...w, status: WeighbridgeStatus.WEIGHING }));
+          else this.weighbridge.update(w => ({ ...w, status: WeighbridgeStatus.COMPLETE }));
+            // When truck leaves the scale, evaluate whether exit barrier may open
+            try { if (!onScale) this.checkExitBarrier(); } catch (e) { }
+        } catch (e) { console.warn('OnScaleChanged handler', e); }
       });
 
       // New: handle VehicleProcessed notifications from backend
@@ -407,10 +565,9 @@ export class ScadaService {
 
     this.entryBarrierState.next(BarrierState.OPEN);
     this.animateBarrier('entry', true, cycleSeq);
-    // notify backend but don't block UI animation
     return this.http.post<any>(`${this.baseApi}/barrier/entry/open`, {});
   }
-
+  
   /**
    * Close entry barrier with animation
    */
@@ -419,10 +576,6 @@ export class ScadaService {
     this.animateBarrier('entry', false, cycleSeq);
     return this.http.post<any>(`${this.baseApi}/barrier/entry/close`, {});
   }
-
-  /**
-   * Open exit barrier with animation
-   */
   openExitBarrier(cycleSeq?: number): any {
     // Prevent opening if entry barrier is open
     if (this.entryBarrier().state === BarrierState.OPEN) {
@@ -432,13 +585,53 @@ export class ScadaService {
 
     this.exitBarrierState.next(BarrierState.OPEN);
     this.animateBarrier('exit', true, cycleSeq);
+
     return this.http.post<any>(`${this.baseApi}/barrier/exit/open`, {});
+  }
+
+  private applyExitBarrierState(state: BarrierState, cycleSeq?: number): void {
+    const opening = state === BarrierState.OPEN;
+    this.exitBarrierState.next(state);
+    this.exitBarrier.update(b => ({ ...b, state }));
+    this.animateBarrier('exit', opening, cycleSeq);
+  }
+
+  /**
+   * Set the auto-close delay for the exit barrier in milliseconds.
+   * Persists the value to localStorage so it survives reloads.
+   */
+  setExitAutoCloseMs(ms: number): void {
+    this.exitAutoCloseMs = Math.max(0, Number(ms) || 0);
+    // Persist locally
+    try { localStorage.setItem('scada.exitAutoCloseMs', String(this.exitAutoCloseMs)); } catch (e) {}
+    // Also persist to backend config endpoint (best-effort)
+    try {
+      this.http.post<any>(`${this.baseApi}/barrier/config/exit-autoclose`, { ms: this.exitAutoCloseMs }).subscribe({
+        next: () => { },
+        error: () => { }
+      });
+    } catch (e) { }
+  }
+
+  /**
+   * Get the currently configured auto-close delay for the exit barrier (ms).
+   */
+  getExitAutoCloseMs(): number {
+    return this.exitAutoCloseMs;
   }
 
   /**
    * Close exit barrier with animation
    */
   closeExitBarrier(cycleSeq?: number): any {
+    // If an auto-close timer exists, clear it (we're closing now)
+    try {
+      if (this.exitAutoCloseTimeout) {
+        clearTimeout(this.exitAutoCloseTimeout);
+        this.exitAutoCloseTimeout = null;
+      }
+    } catch (e) { }
+
     this.exitBarrierState.next(BarrierState.CLOSED);
     this.animateBarrier('exit', false, cycleSeq);
     return this.http.post<any>(`${this.baseApi}/barrier/exit/close`, {});
@@ -574,6 +767,15 @@ export class ScadaService {
       confidence: randomConfidence,
       lastDetection: new Date()
     }));
+
+    // If backend opened the exit barrier and we are awaiting a vehicle pass, notify backend
+    try {
+      if (this.awaitingExitPass) {
+        this.awaitingExitPass = false; // prevent double notifications
+        // best-effort POST to backend notify endpoint
+        this.http.post<any>(`${this.baseApi}/vehicle/pass`, {}).subscribe({ next: () => { console.debug('Notified backend of vehicle pass'); }, error: (e) => { console.warn('notify pass failed', e); } });
+      }
+    } catch (e) { console.warn('simulateExitVehicleDetection notify failed', e); }
   }
 
   /**
@@ -610,8 +812,67 @@ export class ScadaService {
           status: WeighbridgeStatus.COMPLETE,
           weight: targetWeight
         }));
+        // After weight stabilization, check whether exit barrier should open
+        try { this.checkExitBarrier(); } catch (e) { }
       }
     });
+  }
+
+  /**
+   * Evaluate conditions and open/close the exit barrier locally for demo flows.
+   * Conditions to open:
+   *  - weighbridge.status === COMPLETE (measurement completed)
+   *  - weighbridge.vehicleDetected === false (truck moved off bridge)
+   *  - weight > 0 (stable weight present)
+   */
+  checkExitBarrier(): void {
+    try {
+      // If backend is driving the exit sequence via SignalR, don't fight it locally.
+      if (this.backendExitSequenceActive) return;
+
+      const wb = this.weighbridge();
+      const measurementCompleted = wb.status === WeighbridgeStatus.COMPLETE;
+      const truckOnBridge = !!wb.vehicleDetected;
+      const stableWeight = (wb.weight || 0) > 0 && measurementCompleted;
+
+      if (measurementCompleted && stableWeight && !truckOnBridge) {
+        // Open exit barrier and set signal green
+        this.setExitSignal(SignalState.GREEN);
+        this.openExitBarrier();
+
+        // Start auto-close timer
+        try {
+          if (this.exitAutoCloseTimeout) { clearTimeout(this.exitAutoCloseTimeout); this.exitAutoCloseTimeout = null; }
+        } catch (e) { }
+
+        // set a countdown value (seconds) for UI
+        const secs = Math.max(0, Math.floor(this.exitAutoCloseMs / 1000));
+        this.exitAutoCloseTimer.set(secs);
+
+        if (this.exitAutoCloseMs > 0) {
+          // Update countdown every second
+          let remaining = Math.floor(this.exitAutoCloseMs / 1000);
+          this.exitAutoCloseTimeout = setInterval(() => {
+            remaining = Math.max(0, remaining - 1);
+            this.exitAutoCloseTimer.set(remaining);
+            if (remaining <= 0) {
+              try { clearInterval(this.exitAutoCloseTimeout); } catch (e) { }
+              this.exitAutoCloseTimeout = null;
+              this.setExitSignal(SignalState.RED);
+              this.closeExitBarrier();
+              this.exitAutoCloseTimer.set(0);
+            }
+          }, 1000);
+        }
+      } else {
+        // Ensure exit is closed and signal is red when conditions not met
+        this.setExitSignal(SignalState.RED);
+        // Do not force-close here if backend currently owns state, but animate closed locally
+        this.applyExitBarrierState(BarrierState.CLOSED);
+      }
+    } catch (e) {
+      console.warn('checkExitBarrier failed', e);
+    }
   }
 
   /**
@@ -1116,19 +1377,22 @@ export class ScadaService {
       this.updateLedMessage(`WEIGHT: ${wb.weight} KG`);
       this.togglePaSystem(true, 'Weighing Completed, Please Proceed');
 
-      // Exit sequence: open exit and allow exiting animation (handled by CSS)
+      // Exit sequence is backend-owned after weigh complete; SignalR updates barrier/signal state.
       await sleep(1000);
-      this.setExitSignal(SignalState.GREEN);
-      this.openExitBarrier();
+      try {
+        // mark backend as owner of exit barrier transitions for this cycle
+        this.backendExitSequenceActive = true;
+        this.http.post<any>(`${this.baseApi}/weigh/complete`, { delayMs: this.exitAutoCloseMs }).subscribe({
+          error: (e) => console.warn('weigh complete trigger failed', e)
+        });
+      } catch (e) {
+        console.warn('weigh complete trigger failed', e);
+      }
 
       // Trigger exit animation by setting status to EXITED and wait for it to complete
       this.vehicleStatus.set(VehicleStatus.EXITED);
       await sleep(2400);
-
-      // Keep exit open briefly to allow truck to clear
-      await sleep(300);
-      this.closeExitBarrier();
-      this.setExitSignal(SignalState.RED);
+      this.simulateExitVehicleDetection();
 
       // log success
       this.addLog({ plate, status: 'processed', time: new Date(), weight: wb.weight, consignment: assignment.consignment, mode: this.mode() });

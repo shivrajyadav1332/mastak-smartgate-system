@@ -147,12 +147,20 @@
               [position]="barrierExit === BarrierState.OPEN ? 90 : 0">
             </app-barrier>
           </div>
-          <span class="barrier-status">Boom Barrier (Exit): {{ barrierExit === BarrierState.CLOSED ? 'Closed' : 'Open' }}</span>
+          <span class="barrier-status">Boom Barrier (Exit): {{ barrierExit === BarrierState.CLOSED ? 'CLOSED' : 'OPEN' }}</span>
 
           <div style="margin-top:0.75rem; display:flex; gap:0.5rem;">
-            <button (click)="openExitBarrier()">OPEN BARRIER</button>
-            <button (click)="closeExitBarrier()">CLOSE BARRIER</button>
             <button (click)="triggerExitDetection()">ANPR</button>
+          </div>
+          <div style="margin-top:0.5rem; display:flex; gap:0.5rem; align-items:center;">
+            <label style="color:#ddd; margin-right:0.5rem;">Exit auto-close (s):</label>
+            <input type="number" min="0" max="600" [(ngModel)]="exitAutoCloseSeconds" (input)="onExitAutoCloseInput()" title="Delay in seconds before the exit boom auto-closes. 0 = disabled. Valid range: 0–600s." style="width:80px; padding:0.25rem;" />
+            <button (click)="setExitAutoCloseSeconds()" [disabled]="!isExitAutoCloseValid()">Set Auto-Close</button>
+            <span style="color:#aaa; margin-left:0.5rem;">Current: {{ scadaService.exitAutoCloseTimer() || exitAutoCloseSeconds }}s</span>
+            <span style="margin-left:0.75rem;" title="Sets the delay after opening the exit boom before it automatically closes. Enter 0 to disable auto-close.">
+              ⓘ
+            </span>
+            <span style="margin-left:0.75rem;" [style.color]="exitAutoCloseMessage === 'Saved' ? 'limegreen' : (exitAutoCloseMessage ? 'salmon' : '#aaa')">{{ exitAutoCloseMessage }}</span>
           </div>
         </div>
       </div>

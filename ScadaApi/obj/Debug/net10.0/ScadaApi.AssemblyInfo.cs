@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("ScadaApi")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e02e2399752f56f6835ca65530039b69dc1213ad")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+5fca58e7f6f2e90ff8d8e3f4fa5c5c025a8c24b8")]
 [assembly: System.Reflection.AssemblyProductAttribute("ScadaApi")]
 [assembly: System.Reflection.AssemblyTitleAttribute("ScadaApi")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

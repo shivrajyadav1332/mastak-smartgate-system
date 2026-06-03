@@ -40,5 +40,37 @@ namespace FullStackSample.Controllers
             _device.CloseExitBarrier();
             return Ok(new { exitSignal = _device.ExitSignal, exitBarrier = _device.ExitBarrier });
         }
+
+        [HttpGet("config/exit-autoclose")]
+        public IActionResult GetExitAutoClose()
+        {
+            try
+            {
+                var ms = _device.GetExitAutoCloseMs();
+                return Ok(new { exitAutoCloseMs = ms });
+            }
+            catch
+            {
+                return StatusCode(500);
+            }
+        }
+
+        public class ExitAutoCloseDto { public int ms { get; set; } }
+
+        [HttpPost("config/exit-autoclose")]
+        public IActionResult SetExitAutoClose([FromBody] ExitAutoCloseDto dto)
+        {
+            if (dto == null) return BadRequest("payload required");
+            try
+            {
+                var ms = Math.Max(0, dto.ms);
+                _device.SetExitAutoCloseMs(ms);
+                return Ok(new { exitAutoCloseMs = _device.GetExitAutoCloseMs() });
+            }
+            catch
+            {
+                return StatusCode(500);
+            }
+        }
     }
 }
