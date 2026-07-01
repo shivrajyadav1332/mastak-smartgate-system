@@ -1682,11 +1682,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\shivra163872\\Project\\mastak-smartgate-system\\FullStackSample\\FullStackSample.csproj",
+      "projectUniqueName": "C:\\Users\\shivra163872\\Desktop\\YCC - SCADA - Development\\mastak-smartgate-system\\FullStackSample\\FullStackSample.csproj",
       "projectName": "FullStackSample",
-      "projectPath": "C:\\Users\\shivra163872\\Project\\mastak-smartgate-system\\FullStackSample\\FullStackSample.csproj",
+      "projectPath": "C:\\Users\\shivra163872\\Desktop\\YCC - SCADA - Development\\mastak-smartgate-system\\FullStackSample\\FullStackSample.csproj",
       "packagesPath": "C:\\Users\\shivra163872\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\shivra163872\\Project\\mastak-smartgate-system\\FullStackSample\\obj\\",
+      "outputPath": "C:\\Users\\shivra163872\\Desktop\\YCC - SCADA - Development\\mastak-smartgate-system\\FullStackSample\\obj\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\shivra163872\\AppData\\Roaming\\NuGet\\NuGet.Config"
@@ -2174,5 +2174,17 @@
         }
       }
     }
-  }
+  },
+  "logs": [
+    {
+      "code": "NU1903",
+      "level": "Warning",
+      "warningLevel": 1,
+      "message": "Package 'SQLitePCLRaw.lib.e_sqlite3' 2.1.6 has a known high severity vulnerability, https://github.com/advisories/GHSA-2m69-gcr7-jv3q",
+      "libraryId": "SQLitePCLRaw.lib.e_sqlite3",
+      "targetGraphs": [
+        "net10.0"
+      ]
+    }
+  ]
 }

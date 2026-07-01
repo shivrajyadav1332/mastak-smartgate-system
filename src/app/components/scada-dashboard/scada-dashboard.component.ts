@@ -6,6 +6,11 @@ import { SignalComponent } from '../signal/signal.component';
 import { BarrierComponent } from '../barrier/barrier.component';
 import { WeighbridgeComponent } from '../weighbridge/weighbridge.component';
 import { ScadaService } from '../../services/scada.service';
+import {
+  AudioAnnouncementEvent,
+  AudioAnnouncementService,
+  AudioAnnouncementState
+} from '../../services/audio-announcement.service';
 import { SignalState, BarrierState, WeighbridgeStatus, VehicleStatus } from '../../models/scada.models';
 
 @Component({
@@ -43,14 +48,26 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
   ledMessage = '';
   paMessage = '';
   vehicleStatusText = '';
+  audioAnnouncementStatus: AudioAnnouncementState = {
+    currentAnnouncement: 'No announcement',
+    lastAnnouncementTime: null,
+    playbackStatus: 'idle',
+    event: null
+  };
   filterStatus: 'all' | 'processed' | 'rejected' | 'accepted' = 'all';
   filterTerm = '';
 
   private logsSub: any;
   private vehicleTriggerSub: any;
+  private audioStatusSub: any;
   private animFrame: any = null;
   private weightAnimFrame: any = null;
   private lastVehicleStatus: any = null;
+  private lastWeighbridgeStatus: WeighbridgeStatus | null = null;
+  private lastWeightCaptured = 0;
+  private registeredAudioSignalRHandlers: Array<{ eventName: string; handler: (...args: any[]) => void }> = [];
+  private exitDriveOffPending = false;
+  private lastExitBarrierWasOpen = false;
   lastProcessedId = 0;
   private checkIntervalId: any;
   private isProcessingVehicle = false;
@@ -59,8 +76,38 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
   allowedPlatesMessage = '';
   exitAutoCloseSeconds = 30;
   exitAutoCloseMessage = '';
+  cameraImageFailed = false;
 
-  constructor(protected scadaService: ScadaService) {}
+  get displayVehicleNumber(): string {
+    return this.currentTruckPlate || this.currentPlate || '';
+  }
+
+  get primaryWeightDisplay(): string {
+    const gross = this.scadaService.grossWeight();
+    const live = this.displayedWeight || this.weight || 0;
+    const value = gross > 0 ? gross : live;
+    return value > 0 ? value.toFixed(1) : '0.0';
+  }
+
+  get currentTruckCount(): number {
+    return this.displayVehicleNumber ? 1 : 0;
+  }
+
+  get weighbridgeStatusMessage(): string {
+    const step = (this.scadaService.currentProcessStep() || '').toLowerCase();
+    const wbStatus = this.scadaService.weighbridge().status;
+    if (step.includes('in completed') || wbStatus === WeighbridgeStatus.COMPLETE) return 'Weighing complete';
+    if (step.includes('weighing') || wbStatus === WeighbridgeStatus.WEIGHING) return 'Weighing in progress...';
+    if (step.includes('not registered') || step.includes('reject')) return 'Vehicle rejected';
+    if (step.includes('verified') || step.includes('proceed')) return 'Proceed to weighbridge';
+    if (step.includes('transaction completed')) return 'Transaction completed';
+    return this.scadaService.weighbridge().vehicleDetected ? 'Vehicle on scale' : 'Weighbridge idle';
+  }
+
+  constructor(
+    protected scadaService: ScadaService,
+    private audioAnnouncementService: AudioAnnouncementService
+  ) {}
 
   ngOnInit(): void {
     try {
@@ -72,16 +119,25 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
       this.logs = list || [];
     });
 
+    this.audioAnnouncementService.preloadAudio();
+    this.audioStatusSub = this.audioAnnouncementService.status$.subscribe((status) => {
+      this.audioAnnouncementStatus = status;
+    });
+
     // Poll the service state at a short interval to update UI bindings from the centralized state machine
     this.intervalId = setInterval(() => this.syncFromService(), 300);
 
     // Initial load of backend system status and logs
     this.loadSystemStatus();
+    this.loadDashboardStatus();
     this.loadLogs();
     // Use checkNewVehicle to both refresh and trigger processing
     this.checkIntervalId = setInterval(() => this.checkNewVehicle(), 2000);
     // Poll the latest single-vehicle control endpoint every 2 seconds
-    this.pollIntervalId = setInterval(() => this.loadControl(), 2000);
+    this.pollIntervalId = setInterval(() => {
+      this.loadControl();
+      this.loadDashboardStatus();
+    }, 2000);
 
     // Listen for external triggers (vehicle input component)
     this.vehicleTriggerSub = this.scadaService.vehicleTrigger$.subscribe((plate: string) => {
@@ -93,6 +149,7 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
     // Subscribe to backend-controlled state updates (preferred canonical event)
     try {
       if ((this.scadaService as any).hubConnection) {
+        this.registerAudioSignalRHandlers();
         (this.scadaService as any).hubConnection.on('ReceiveSystemStatus', (data: any) => {
           try {
             console.log('STATE UPDATE:', data);
@@ -103,6 +160,7 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
             this.weight = data.currentWeight || 0;
             this.currentTruckPlate = data.currentTruckPlate || '';
             this.ledMessage = data.ledMessage || '';
+            this.cameraImageFailed = false;
           } catch (e) { console.warn('ReceiveSystemStatus handler failed', e); }
         });
       }
@@ -141,8 +199,11 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
     if (this.pollIntervalId) clearInterval(this.pollIntervalId);
     if (this.checkIntervalId) clearInterval(this.checkIntervalId);
     if (this.vehicleTriggerSub) this.vehicleTriggerSub.unsubscribe?.();
+    if (this.audioStatusSub) this.audioStatusSub.unsubscribe?.();
     if (this.entryCloseTimeout) clearTimeout(this.entryCloseTimeout);
     if (this.exitCloseTimeout) clearTimeout(this.exitCloseTimeout);
+    this.unregisterAudioSignalRHandlers();
+    this.audioAnnouncementService.stop();
   }
 
   private syncFromService(): void {
@@ -150,6 +211,7 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
       const vs = this.scadaService.vehicleStatus();
       // When vehicle status changes, animate the truck to the target position
       if (vs !== this.lastVehicleStatus) {
+        this.handleVehicleStatusAnnouncement(vs);
         if (vs === VehicleStatus.EXITED) this.animateTruckTo(100);
         else if (vs === VehicleStatus.POSITIONING || vs === VehicleStatus.WEIGHING || vs === VehicleStatus.READY || vs === VehicleStatus.VALIDATED || vs === VehicleStatus.ARRIVED) this.animateTruckTo(50);
         else this.animateTruckTo(0);
@@ -164,6 +226,7 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
       const wb = this.scadaService.weighbridge();
       // animate displayed weight toward service weight
       this.animateWeightTo(wb.weight || 0);
+      this.handleWeighbridgeAnnouncement(wb.status, wb.weight || 0);
 
       const led = this.scadaService.ledDisplay();
       this.ledMessage = led?.message || '';
@@ -172,6 +235,7 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
       this.paMessage = pa?.message || '';
 
       this.vehicleStatusText = vs;
+      this.handlePostWeighExitDriveOff();
       // If exit barrier is open and truck is near exit, trigger exit detection (simulate sensor)
       try {
         if (this.barrierExit === BarrierState.OPEN && this.truckPosition >= 80) {
@@ -187,6 +251,118 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
     }
   }
 
+  private handlePostWeighExitDriveOff(): void {
+    const exitOpen = this.barrierExit === BarrierState.OPEN;
+    const step = (this.scadaService.currentProcessStep() || '').toLowerCase();
+    const postWeigh = step.includes('in completed') || step.includes('proceed to exit') || step.includes('exit barrier');
+
+    if (exitOpen && !this.lastExitBarrierWasOpen && postWeigh && !this.exitDriveOffPending) {
+      this.exitDriveOffPending = true;
+      this.scadaService.currentProcessStep.set('Exit barrier open. Truck exiting weighbridge...');
+      this.animateTruckTo(100);
+      setTimeout(() => {
+        this.scadaService.notifyVehiclePassed();
+        this.vehicleStatusText = VehicleStatus.EXITED;
+        setTimeout(() => {
+          this.animateTruckTo(0);
+          this.exitDriveOffPending = false;
+        }, 1500);
+      }, 2200);
+    }
+
+    if (!exitOpen) {
+      this.exitDriveOffPending = false;
+    }
+
+    this.lastExitBarrierWasOpen = exitOpen;
+  }
+
+  private announce(event: AudioAnnouncementEvent): void {
+    this.audioAnnouncementService.announce(event).catch((error) => {
+      console.warn('Audio announcement failed', event, error);
+    });
+  }
+
+  private handleVehicleStatusAnnouncement(status: VehicleStatus): void {
+    switch (status) {
+      case VehicleStatus.ARRIVED:
+        this.announce('VehicleDetected');
+        break;
+      case VehicleStatus.POSITIONING:
+        this.announce('TruckMisaligned');
+        break;
+      case VehicleStatus.READY:
+        this.announce('TruckAligned');
+        break;
+      case VehicleStatus.EXITED:
+        this.announce('ExitApproved');
+        break;
+    }
+  }
+
+  private handleWeighbridgeAnnouncement(status: WeighbridgeStatus, weight: number): void {
+    if (status === WeighbridgeStatus.COMPLETE && weight > 0) {
+      const weightChanged = Math.abs(weight - this.lastWeightCaptured) > 0.1;
+      if (this.lastWeighbridgeStatus !== WeighbridgeStatus.COMPLETE || weightChanged) {
+        this.lastWeightCaptured = weight;
+        this.announce('WeightCaptured');
+      }
+    }
+
+    this.lastWeighbridgeStatus = status;
+  }
+
+  private registerAudioSignalRHandlers(): void {
+    const hubConnection = (this.scadaService as any).hubConnection;
+    if (!hubConnection) return;
+
+    const eventMap: Record<AudioAnnouncementEvent, AudioAnnouncementEvent> = {
+      VehicleDetected: 'VehicleDetected',
+      TruckMisaligned: 'TruckMisaligned',
+      TruckAligned: 'TruckAligned',
+      WeightCaptured: 'WeightCaptured',
+      ExitApproved: 'ExitApproved'
+    };
+
+    Object.keys(eventMap).forEach((signalREvent) => {
+      const event = eventMap[signalREvent as AudioAnnouncementEvent];
+      const handler = () => this.announce(event);
+      hubConnection.on(signalREvent, handler);
+      this.registeredAudioSignalRHandlers.push({ eventName: signalREvent, handler });
+    });
+
+    const deviceEventHandler = (payload: any) => this.handleDeviceEventAnnouncement(payload);
+    hubConnection.on('DeviceEvent', deviceEventHandler);
+    this.registeredAudioSignalRHandlers.push({ eventName: 'DeviceEvent', handler: deviceEventHandler });
+
+    const onScaleChangedHandler = (onScale: any) => {
+      if (onScale) {
+        this.announce('TruckMisaligned');
+      } else {
+        this.announce('TruckAligned');
+      }
+    };
+    hubConnection.on('OnScaleChanged', onScaleChangedHandler);
+    this.registeredAudioSignalRHandlers.push({ eventName: 'OnScaleChanged', handler: onScaleChangedHandler });
+  }
+
+  private unregisterAudioSignalRHandlers(): void {
+    const hubConnection = (this.scadaService as any).hubConnection;
+    if (!hubConnection) return;
+
+    this.registeredAudioSignalRHandlers.forEach(({ eventName, handler }) => hubConnection.off(eventName, handler));
+    this.registeredAudioSignalRHandlers = [];
+  }
+
+  private handleDeviceEventAnnouncement(payload: any): void {
+    const eventName = (payload?.event || payload?.eventName || payload?.['@event'] || '').toString().toUpperCase();
+
+    if (eventName === 'VEHICLE_ENTRY') this.announce('VehicleDetected');
+    if (eventName === 'WEIGHING') this.announce('TruckMisaligned');
+    if (eventName === 'WEIGH_COMPLETE') this.announce('WeightCaptured');
+    if (eventName === 'EXIT_OPEN') this.announce('ExitApproved');
+  }
+
   private animateTruckTo(targetPercent: number, duration = 900) {
     if (this.animFrame) cancelAnimationFrame(this.animFrame);
     const start = performance.now();
@@ -199,6 +375,7 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
       const eased = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
       this.truckPosition = Math.round((from + diff * eased) * 100) / 100;
       if (t < 1) this.animFrame = requestAnimationFrame(step);
+
       else this.animFrame = null;
     };
 
@@ -235,68 +412,188 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
       return (l.plate || l.plateNumber || '').toString().toLowerCase().includes(term) || (l.consignment || '').toString().toLowerCase().includes(term);
     });
   }
+  onCameraImageError(event: Event): void {
+    this.cameraImageFailed = true;
+    const img = event.target as HTMLImageElement;
+    if (img) img.style.display = 'none';
+  }
 
-  // UI actions simply delegate to the central service/state machine
-  toggleEntrySignal(): void { this.scadaService.toggleEntrySignal(); }
-  toggleExitSignal(): void { this.scadaService.toggleExitSignal(); }
-  toggleEntryBarrier(): void { const s = this.scadaService.entryBarrier().state; s === BarrierState.CLOSED ? this.scadaService.openEntryBarrier() : this.scadaService.closeEntryBarrier(); }
-  toggleExitBarrier(): void { const s = this.scadaService.exitBarrier().state; s === BarrierState.CLOSED ? this.scadaService.openExitBarrier() : this.scadaService.closeExitBarrier(); }
-  togglePaSystem(): void { const active = this.scadaService.paSystem().active; this.scadaService.togglePaSystem(!active, !active ? 'PA System Active - Testing' : 'No PA Announcement'); }
-  triggerEntryDetection(): void { this.scadaService.simulateEntryVehicleDetection(); }
-  triggerExitDetection(): void { this.scadaService.simulateExitVehicleDetection(); }
-  toggleWeighbridge(): void { this.scadaService.toggleWeighbridge(); }
+  resetEntryGate(): void {
+    this.entrySignal = 'RED';
+    this.barrierEntry = BarrierState.CLOSED;
+    this.scadaService.closeBarrier('entry').subscribe();
+    this.scadaService.setSignalRed('entry').subscribe();
+  }
 
-  // Submit a specific plate to the centralized state machine. The service will run the full state flow.
-  submitPlate(): void {
-    if (!this.plateNumber) return;
-
-    const plate = this.plateNumber.trim();
-    const payload = { plateNumber: plate, weight: this.manualWeight };
-
-    this.scadaService.processVehicle(payload).subscribe({
-      next: (res: any) => {
-        try {
-          const status = (res.status || '').toString().toUpperCase();
-
-          // Refresh backend data
-          this.loadLogs();
-          this.loadSystemStatus();
-          this.loadControl();
-
-          if (status === 'ACCEPTED') {
-            this.entrySignal = 'GREEN';
-            this.weight = res.weight || payload.weight || 0;
-            this.currentPlate = plate;
-          } else {
-            this.entrySignal = 'RED';
-            this.entryBarrierOpen = false;
-            this.currentPlate = plate;
-            this.weight = res.weight || payload.weight || 0;
-            try { this.scadaService.pushLog({ plateNumber: plate, status: 'REJECTED', time: new Date(), weight: this.weight }); } catch (e) {}
-          }
-        } catch (e) {
-          console.warn('processVehicle response handling failed', e);
-        }
-      },
-      error: (err: any) => {
-        console.error('processVehicle failed', err);
-        this.entrySignal = 'RED';
-        this.entryBarrierOpen = false;
-      },
-      complete: () => {
-        this.plateNumber = '';
-      }
+  loadDashboardStatus(): void {
+    this.scadaService.getDashboardStatus().subscribe({
+      next: (data: any) => this.applyDashboardPayload(data),
+      error: () => {}
     });
   }
 
-  simulateVehicle(): void {
-    // pick a sample plate and call the same backend API
-    const samples = ['ABC-1234', 'XYZ-9999', 'DEF-9012', 'GHI-3456'];
-    const plate = samples[Math.floor(Math.random() * samples.length)];
-    this.plateNumber = plate;
-    // random realistic weight between 2000 and 28000 kg
-    this.manualWeight = Math.floor(2000 + Math.random() * 26000);
+  private applyDashboardPayload(data: any): void {
+    if (!data) return;
+    this.entrySignal = data.entrySignal || this.entrySignal;
+    this.exitSignal = data.exitSignal || this.exitSignal;
+    this.barrierEntry = (data.entryBoomBarrier || data.entryBarrier || this.barrierEntry) === 'OPEN' ? BarrierState.OPEN : BarrierState.CLOSED;
+    this.barrierExit = (data.exitBoomBarrier || data.exitBarrier || this.barrierExit) === 'OPEN' ? BarrierState.OPEN : BarrierState.CLOSED;
+    this.currentTruckPlate = data.vehicleNumber || data.currentTruckPlate || this.currentTruckPlate;
+    this.weight = data.grossWeight ?? data.currentWeight ?? this.weight;
+    if (data.truckPosition != null) {
+      this.truckPosition = data.truckPosition >= 50 ? 50 : 0;
+    }
+  }
+
+  // UI actions delegate to backend REST APIs
+  toggleEntrySignal(): void {
+    const next = this.entrySignal === 'GREEN' ? 'red' : 'green';
+    next === 'green' ? this.scadaService.setSignalGreen('entry').subscribe() : this.scadaService.setSignalRed('entry').subscribe();
+  }
+
+  toggleExitSignal(): void {
+    const next = this.exitSignal === 'GREEN' ? 'red' : 'green';
+    next === 'green' ? this.scadaService.setSignalGreen('exit').subscribe() : this.scadaService.setSignalRed('exit').subscribe();
+  }
+
+  toggleEntryBarrier(): void {
+    const isClosed = this.barrierEntry === BarrierState.CLOSED;
+    isClosed ? this.scadaService.openBarrier('entry').subscribe() : this.scadaService.closeBarrier('entry').subscribe();
+  }
+
+  toggleExitBarrier(): void {
+    const isClosed = this.barrierExit === BarrierState.CLOSED;
+    isClosed ? this.scadaService.openBarrier('exit').subscribe() : this.scadaService.closeBarrier('exit').subscribe();
+  }
+
+  togglePaSystem(): void {
+    const active = this.scadaService.paSystem().active;
+    this.scadaService.togglePaSystem(!active, !active ? 'PA System Active - Testing' : 'No PA Announcement');
+  }
+
+  triggerEntryDetection(): void {
+    if (this.plateNumber) {
+      this.submitPlate();
+    } else {
+      const samples = ['ABC-1234', 'XYZ-9999', 'DEF-9012'];
+      this.plateNumber = samples[Math.floor(Math.random() * samples.length)];
+      this.submitPlate();
+    }
+  }
+
+  triggerExitDetection(): void {
+    const currentPlate = this.currentTruckPlate || 'ABC-1234';
+    this.plateNumber = currentPlate;
+    this.manualWeight = 9500; // tare weight
     this.submitPlate();
+  }
+
+  toggleWeighbridge(): void {
+    this.scadaService.toggleWeighbridge();
+  }
+
+  // Submit a specific plate for Weighbridge IN or OUT flow
+  submitPlate(): void {
+    if (!this.plateNumber) return;
+
+    const plate = this.plateNumber.trim().toUpperCase();
+    const weight = this.manualWeight || 25000;
+    this.announce('VehicleDetected');
+
+    // Determine if vehicle is already weighed in (check if current process step contains IN COMPLETED)
+    const isWeighbridgeOut = this.scadaService.currentProcessStep().includes('IN COMPLETED') || 
+                             this.scadaService.currentProcessStep().includes('Gross');
+
+    if (isWeighbridgeOut) {
+      // ➡️ WEIGHBRIDGE OUT FLOW
+      this.scadaService.weighOut(plate, weight).subscribe({
+        next: (res: any) => {
+          this.animateTruckTo(100);
+          setTimeout(() => {
+            this.animateTruckTo(0);
+            this.loadLogs();
+            this.loadSystemStatus();
+          }, 3000);
+        },
+        error: (err: any) => {
+          console.error("Weigh Out failed", err);
+        }
+      });
+    } else {
+      // ➡️ WEIGHBRIDGE IN FLOW
+      this.scadaService.checkVehicle(plate).subscribe({
+        next: (res: any) => {
+          if (res.success) {
+            this.currentTruckPlate = res.vehicleNumber || plate;
+            this.currentPlate = this.currentTruckPlate;
+            // Animate truck onto the weighbridge platform
+            this.animateTruckTo(50);
+            setTimeout(() => {
+              // Call weighIn once truck stops on scale
+              this.scadaService.weighIn(plate, weight).subscribe({
+                next: () => {
+                  this.scadaService.currentProcessStep.set('Gross Weight Captured. Status: IN COMPLETED.');
+                  this.loadLogs();
+                  this.loadSystemStatus();
+                  this.loadDashboardStatus();
+                },
+                error: (err) => console.error("Weigh In failed", err)
+              });
+            }, 2500);
+          } else {
+            this.entrySignal = 'RED';
+            this.barrierEntry = BarrierState.CLOSED;
+          }
+          this.loadLogs();
+          this.loadSystemStatus();
+        },
+        error: (err: any) => {
+          console.error("Check vehicle failed", err);
+          this.entrySignal = 'RED';
+          this.barrierEntry = BarrierState.CLOSED;
+        }
+      });
+    }
+
+    this.plateNumber = '';
+  }
+
+  // Automated end-to-end Weighbridge IN & OUT workflow simulation
+  simulateVehicle(): void {
+    const samples = ['ABC-1234', 'XYZ-9999', 'DEF-9012'];
+    const plate = samples[Math.floor(Math.random() * samples.length)];
+    this.runFullSmartGateSimulation(plate);
+  }
+
+  async runFullSmartGateSimulation(plate: string) {
+    try {
+      this.announce('VehicleDetected');
+      this.scadaService.anprCameraStatus.set('Capturing entry plate...');
+      await new Promise(r => setTimeout(r, 1200));
+
+      this.scadaService.checkVehicle(plate).subscribe(async (resCheck: any) => {
+        if (!resCheck.success) {
+          console.warn("Unregistered vehicle:", resCheck.message);
+          return;
+        }
+
+        // Move truck from gate to weighbridge (Step 5)
+        this.animateTruckTo(50);
+        await new Promise(r => setTimeout(r, 2500));
+
+        // Capture Gross Weight (Step 6)
+        const grossWeight = Math.floor(24000 + Math.random() * 6000);
+        this.scadaService.weighIn(plate, grossWeight).subscribe(async () => {
+          this.scadaService.currentProcessStep.set('Gross Weight Captured. Status: IN COMPLETED.');
+          // Wait for exit barrier to open, truck to drive off, and barrier to close
+          await new Promise(r => setTimeout(r, 8000));
+          this.loadDashboardStatus();
+          this.loadSystemStatus();
+        });
+      });
+    } catch (e) {
+      console.error("Simulation flow error", e);
+    }
   }
 
   // Apply a preset system state to the backend and refresh UI
@@ -317,6 +614,7 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
         this.loadSystemStatus();
         this.loadControl();
         this.loadLogs();
+        this.announce('ExitApproved');
       },
       error: (err: any) => { console.warn('applySampleState failed', err); }
     });
@@ -477,6 +775,11 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
   closeExitBarrier(): void { this.scadaService.closeExitBarrier(); }
   startAutomatedCycle(): void { this.scadaService.runAutomatedCycle(); }
   resetWeighbridge(): void { this.scadaService.resetSystem(); }
+
+  simulateAlignmentCheck(): void {
+    this.announce('TruckMisaligned');
+    setTimeout(() => this.announce('TruckAligned'), 1800);
+  }
 
   // Polling-based control loader: queries latest vehicle and updates UI
   loadControl(): void {

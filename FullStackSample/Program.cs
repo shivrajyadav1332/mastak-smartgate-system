@@ -36,6 +36,22 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Recreate database to ensure all new tables are created and seeded
+using (var scope = app.Services.CreateScope())
+{
+    try
+    {
+        var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        context.Database.EnsureDeleted();
+        context.Database.EnsureCreated();
+        Console.WriteLine("Database successfully initialized and seeded.");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error initializing database: {ex.Message}");
+    }
+}
+
 // Enable serving default files (index.html) and static files for the frontend
 app.UseDefaultFiles();
 app.UseStaticFiles();

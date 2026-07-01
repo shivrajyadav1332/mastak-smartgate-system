@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "g975yoyQ3gg=",
+  "dgSpecHash": "WLWq3sxSBuU=",
   "success": true,
-  "projectFilePath": "C:\\Users\\shivra163872\\Project\\mastak-smartgate-system\\FullStackSample\\FullStackSample.csproj",
+  "projectFilePath": "C:\\Users\\shivra163872\\Desktop\\YCC - SCADA - Development\\mastak-smartgate-system\\FullStackSample\\FullStackSample.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\shivra163872\\.nuget\\packages\\exceldatareader\\3.8.0\\exceldatareader.3.8.0.nupkg.sha512",
     "C:\\Users\\shivra163872\\.nuget\\packages\\exceldatareader.dataset\\3.8.0\\exceldatareader.dataset.3.8.0.nupkg.sha512",
@@ -36,5 +36,18 @@
     "C:\\Users\\shivra163872\\.nuget\\packages\\system.composition.runtime\\6.0.0\\system.composition.runtime.6.0.0.nupkg.sha512",
     "C:\\Users\\shivra163872\\.nuget\\packages\\system.composition.typedparts\\6.0.0\\system.composition.typedparts.6.0.0.nupkg.sha512"
   ],
-  "logs": []
+  "logs": [
+    {
+      "code": "NU1903",
+      "level": "Warning",
+      "message": "Package 'SQLitePCLRaw.lib.e_sqlite3' 2.1.6 has a known high severity vulnerability, https://github.com/advisories/GHSA-2m69-gcr7-jv3q",
+      "projectPath": "C:\\Users\\shivra163872\\Desktop\\YCC - SCADA - Development\\mastak-smartgate-system\\FullStackSample\\FullStackSample.csproj",
+      "warningLevel": 1,
+      "filePath": "C:\\Users\\shivra163872\\Desktop\\YCC - SCADA - Development\\mastak-smartgate-system\\FullStackSample\\FullStackSample.csproj",
+      "libraryId": "SQLitePCLRaw.lib.e_sqlite3",
+      "targetGraphs": [
+        "net10.0"
+      ]
+    }
+  ]
 }

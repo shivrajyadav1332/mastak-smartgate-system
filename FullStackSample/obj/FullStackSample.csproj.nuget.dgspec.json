@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\shivra163872\\Project\\mastak-smartgate-system\\FullStackSample\\FullStackSample.csproj": {}
+    "C:\\Users\\shivra163872\\Desktop\\YCC - SCADA - Development\\mastak-smartgate-system\\FullStackSample\\FullStackSample.csproj": {}
   },
   "projects": {
-    "C:\\Users\\shivra163872\\Project\\mastak-smartgate-system\\FullStackSample\\FullStackSample.csproj": {
+    "C:\\Users\\shivra163872\\Desktop\\YCC - SCADA - Development\\mastak-smartgate-system\\FullStackSample\\FullStackSample.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\shivra163872\\Project\\mastak-smartgate-system\\FullStackSample\\FullStackSample.csproj",
+        "projectUniqueName": "C:\\Users\\shivra163872\\Desktop\\YCC - SCADA - Development\\mastak-smartgate-system\\FullStackSample\\FullStackSample.csproj",
         "projectName": "FullStackSample",
-        "projectPath": "C:\\Users\\shivra163872\\Project\\mastak-smartgate-system\\FullStackSample\\FullStackSample.csproj",
+        "projectPath": "C:\\Users\\shivra163872\\Desktop\\YCC - SCADA - Development\\mastak-smartgate-system\\FullStackSample\\FullStackSample.csproj",
         "packagesPath": "C:\\Users\\shivra163872\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\shivra163872\\Project\\mastak-smartgate-system\\FullStackSample\\obj\\",
+        "outputPath": "C:\\Users\\shivra163872\\Desktop\\YCC - SCADA - Development\\mastak-smartgate-system\\FullStackSample\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\shivra163872\\AppData\\Roaming\\NuGet\\NuGet.Config"

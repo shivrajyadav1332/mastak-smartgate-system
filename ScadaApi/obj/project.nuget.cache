@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "GlnZ0Pp7YPs=",
+  "dgSpecHash": "5xvsT5Aoe4o=",
   "success": true,
-  "projectFilePath": "C:\\Users\\shivra163872\\Project\\mastak-smartgate-system\\ScadaApi\\ScadaApi.csproj",
+  "projectFilePath": "C:\\Users\\shivra163872\\Desktop\\YCC - SCADA - Development\\mastak-smartgate-system\\ScadaApi\\ScadaApi.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\shivra163872\\.nuget\\packages\\microsoft.aspnetcore.openapi\\10.0.5\\microsoft.aspnetcore.openapi.10.0.5.nupkg.sha512",
     "C:\\Users\\shivra163872\\.nuget\\packages\\microsoft.openapi\\2.0.0\\microsoft.openapi.2.0.0.nupkg.sha512"

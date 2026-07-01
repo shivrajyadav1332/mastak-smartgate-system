@@ -19,5 +19,11 @@ namespace FullStackSample.Models
         // Barrier state for UI: "OPEN" or "CLOSED"
         public string Barrier { get; set; } = "CLOSED";
         public DateTime EntryTime { get; set; } = DateTime.Now;
+
+        // Extended fields for SCADA process flow
+        public string DriverName { get; set; } = string.Empty;
+        public string Destination { get; set; } = string.Empty;
+        public string PurchaseOrder { get; set; } = string.Empty;
+        public bool IsRegistered { get; set; } = true;
     }
 }

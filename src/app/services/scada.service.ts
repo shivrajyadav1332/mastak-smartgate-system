@@ -99,6 +99,20 @@ export class ScadaService {
     vehicleDetected: false
   });
 
+  // New SCADA signals for SQLite database properties
+  currentDriverName = signal<string>('');
+  currentCustomerName = signal<string>('');
+  currentMaterialName = signal<string>('');
+  currentDestination = signal<string>('');
+  currentPurchaseOrder = signal<string>('');
+  grossWeight = signal<number>(0);
+  tareWeight = signal<number>(0);
+  netWeight = signal<number>(0);
+  currentProcessStep = signal<string>('Idle');
+  systemStatus = signal<string>('System Online');
+  liveCameraImage = signal<string>('');
+  anprCameraStatus = signal<string>('Ready');
+
   // (No service-driven truck position in manual mode)
 
   // Vehicle processing state
@@ -122,13 +136,50 @@ export class ScadaService {
   // Legacy helper that UI may use to push an internal log (keeps BehaviorSubject semantics)
   // Keep existing allowed-plates and vehicles helpers for backward compatibility
   addVehicle(plate: string) {
-    // Use route-backed arrival to avoid body-binding issues
     return this.http.post<any>(`${this.baseApi}/vehicle/arrive/${encodeURIComponent(plate)}`, {});
   }
 
-  // Check a plate via backend validation endpoint (keeps older name)
+  // Check a plate via new POST /api/vehicle/check
   checkVehicle(plate: string) {
-    return this.http.get<any>(`${this.baseApi}/vehicle/check/${plate}`);
+    return this.http.post<any>(`${this.baseApi}/vehicle/check`, { plateNumber: plate });
+  }
+
+  // Weigh In via POST /api/vehicle/in
+  weighIn(plate: string, weight: number) {
+    return this.http.post<any>(`${this.baseApi}/vehicle/in`, { plateNumber: plate, grossWeight: weight });
+  }
+
+  // Weigh Out via POST /api/vehicle/out
+  weighOut(plate: string, weight: number) {
+    return this.http.post<any>(`${this.baseApi}/vehicle/out`, { plateNumber: plate, tareWeight: weight });
+  }
+
+  // Print slip via POST /api/print/slip
+  printSlip(txId: number) {
+    return this.http.post<any>(`${this.baseApi}/print/slip`, { transactionId: txId });
+  }
+
+  // Manual barrier actions
+  openBarrier(barrier: string = 'entry') {
+    return this.http.post<any>(`${this.baseApi}/barrier/open`, { barrier });
+  }
+
+  closeBarrier(barrier: string = 'entry') {
+    return this.http.post<any>(`${this.baseApi}/barrier/close`, { barrier });
+  }
+
+  // Manual signal actions
+  setSignalRed(signal: string = 'entry') {
+    return this.http.post<any>(`${this.baseApi}/signal/red`, { signal });
+  }
+
+  setSignalGreen(signal: string = 'entry') {
+    return this.http.post<any>(`${this.baseApi}/signal/green`, { signal });
+  }
+
+  // Camera capture simulation
+  captureCamera() {
+    return this.http.post<any>(`${this.baseApi}/camera/capture`, {});
   }
 
   // Allowed plates management (GET/POST)
@@ -152,11 +203,23 @@ export class ScadaService {
 
   // Process vehicle via weighbridge API
   processVehicle(data: any) {
+    // If the data payload indicates check, invoke checking directly
+    if (data && data.plateNumber) {
+      return this.checkVehicle(data.plateNumber);
+    }
     return this.http.post<any>(`${this.apiUrl}/process`, data);
   }
 
   getSystemStatus() {
     return this.http.get<any>(`${this.baseApi}/system/state`);
+  }
+
+  getDashboardStatus() {
+    return this.http.get<any>(`${this.baseApi}/dashboard/status`);
+  }
+
+  getLatestTransaction() {
+    return this.http.get<any>(`${this.baseApi}/transaction/latest`);
   }
 
   setSystemState(state: any) {
@@ -314,6 +377,20 @@ export class ScadaService {
           if (payload.currentTruckPlate) {
             try { this.pushLog({ plate: payload.currentTruckPlate, status: 'processed', time: new Date(), weight: w }); } catch (e) {}
           }
+
+          // Update SQLite properties
+          this.currentDriverName.set(payload.currentDriverName || '');
+          this.currentCustomerName.set(payload.currentCustomerName || '');
+          this.currentMaterialName.set(payload.currentMaterialName || '');
+          this.currentDestination.set(payload.currentDestination || '');
+          this.currentPurchaseOrder.set(payload.currentPurchaseOrder || '');
+          this.grossWeight.set(payload.grossWeight || 0);
+          this.tareWeight.set(payload.tareWeight || 0);
+          this.netWeight.set(payload.netWeight || 0);
+          this.currentProcessStep.set(payload.currentProcessStep || 'Idle');
+          this.systemStatus.set(payload.systemStatus || 'System Online');
+          this.liveCameraImage.set(payload.liveCameraImage || '');
+          this.anprCameraStatus.set(payload.anprCameraStatus || 'Ready');
         } catch (e) {
           console.warn('SystemStateChanged handler failed', e);
         }
@@ -353,6 +430,20 @@ export class ScadaService {
           if (payload.currentTruckPlate) {
             try { this.pushLog({ plate: payload.currentTruckPlate, status: 'processed', time: new Date(), weight: w }); } catch (e) {}
           }
+
+          // Update SQLite properties
+          this.currentDriverName.set(payload.currentDriverName || '');
+          this.currentCustomerName.set(payload.currentCustomerName || '');
+          this.currentMaterialName.set(payload.currentMaterialName || '');
+          this.currentDestination.set(payload.currentDestination || '');
+          this.currentPurchaseOrder.set(payload.currentPurchaseOrder || '');
+          this.grossWeight.set(payload.grossWeight || 0);
+          this.tareWeight.set(payload.tareWeight || 0);
+          this.netWeight.set(payload.netWeight || 0);
+          this.currentProcessStep.set(payload.currentProcessStep || 'Idle');
+          this.systemStatus.set(payload.systemStatus || 'System Online');
+          this.liveCameraImage.set(payload.liveCameraImage || '');
+          this.anprCameraStatus.set(payload.anprCameraStatus || 'Ready');
 
           // If backend indicates exit barrier is open, set awaiting flag so UI can notify pass when sensor/ANPR detects
           try {
@@ -749,33 +840,38 @@ export class ScadaService {
   }
 
   /**
+   * Notify backend that the truck has cleared the weighbridge / exit sensor.
+   */
+  notifyVehiclePassed(): void {
+    if (!this.awaitingExitPass) return;
+    this.awaitingExitPass = false;
+    this.http.post<any>(`${this.baseApi}/vehicle/pass`, {}).subscribe({
+      next: () => console.debug('Notified backend of vehicle pass'),
+      error: (e) => console.warn('notify pass failed', e)
+    });
+  }
+
+  /**
    * Simulate vehicle detection on exit
    */
   simulateExitVehicleDetection(): void {
-    if (!this.exitAnprCamera().active) return;
+    if (this.exitAnprCamera().active) {
+      const plates = [
+        'WXY-4321', 'ZAB-8765', 'CDE-2109', 'FGH-6543',
+        'IJK-0987', 'LMN-5432', 'OPQ-9876', 'RST-3210'
+      ];
+      const randomPlate = plates[Math.floor(Math.random() * plates.length)];
+      const randomConfidence = Math.floor(Math.random() * 30) + 70;
 
-    const plates = [
-      'WXY-4321', 'ZAB-8765', 'CDE-2109', 'FGH-6543',
-      'IJK-0987', 'LMN-5432', 'OPQ-9876', 'RST-3210'
-    ];
-    const randomPlate = plates[Math.floor(Math.random() * plates.length)];
-    const randomConfidence = Math.floor(Math.random() * 30) + 70; // 70-100%
+      this.exitAnprCamera.update(c => ({
+        ...c,
+        detectedPlate: randomPlate,
+        confidence: randomConfidence,
+        lastDetection: new Date()
+      }));
+    }
 
-    this.exitAnprCamera.update(c => ({
-      ...c,
-      detectedPlate: randomPlate,
-      confidence: randomConfidence,
-      lastDetection: new Date()
-    }));
-
-    // If backend opened the exit barrier and we are awaiting a vehicle pass, notify backend
-    try {
-      if (this.awaitingExitPass) {
-        this.awaitingExitPass = false; // prevent double notifications
-        // best-effort POST to backend notify endpoint
-        this.http.post<any>(`${this.baseApi}/vehicle/pass`, {}).subscribe({ next: () => { console.debug('Notified backend of vehicle pass'); }, error: (e) => { console.warn('notify pass failed', e); } });
-      }
-    } catch (e) { console.warn('simulateExitVehicleDetection notify failed', e); }
+    this.notifyVehiclePassed();
   }
 
   /**

@@ -46,7 +46,7 @@ namespace FullStackSample.Services
         // Current active weighment info (simplified single active weighment model)
         private WeighmentStatus? _currentWeighment = null;
         // Current high-level stage for the demo flow: ENTRY, WEIGHING, WEIGH_COMPLETE, EXIT, IDLE
-        public string Stage { get; private set; } = "IDLE";
+        public string Stage { get; set; } = "IDLE";
         private readonly IHubContext<VehicleHub> _hub;
 
         // Configurable demo timings (milliseconds) - can be updated at runtime
@@ -57,16 +57,30 @@ namespace FullStackSample.Services
         private int _exitMs = 1200;
 
         // System state
-        public string EntrySignal { get; private set; } = "RED";
-        public string ExitSignal { get; private set; } = "RED";
-        public string EntryBarrier { get; private set; } = "CLOSED";
-        public string ExitBarrier { get; private set; } = "CLOSED";
+        public string EntrySignal { get; set; } = "RED";
+        public string ExitSignal { get; set; } = "RED";
+        public string EntryBarrier { get; set; } = "CLOSED";
+        public string ExitBarrier { get; set; } = "CLOSED";
         // Position sensor: true when a vehicle is on the scale
-        public bool OnScale { get; private set; } = false;
-        public string CurrentTruckPlate { get; private set; } = string.Empty;
-        public int CurrentWeight { get; private set; } = 0;
-        public string Mode { get; private set; } = "ANPR";
-        public string LedMessage { get; private set; } = "NO LED MESSAGE";
+        public bool OnScale { get; set; } = false;
+        public string CurrentTruckPlate { get; set; } = string.Empty;
+        public int CurrentWeight { get; set; } = 0;
+        public string Mode { get; set; } = "ANPR";
+        public string LedMessage { get; set; } = "NO LED MESSAGE";
+
+        // New fields for SCADA Dashboard database integration
+        public string CurrentDriverName { get; set; } = string.Empty;
+        public string CurrentCustomerName { get; set; } = string.Empty;
+        public string CurrentMaterialName { get; set; } = string.Empty;
+        public string CurrentDestination { get; set; } = string.Empty;
+        public string CurrentPurchaseOrder { get; set; } = string.Empty;
+        public double GrossWeight { get; set; } = 0;
+        public double TareWeight { get; set; } = 0;
+        public double NetWeight { get; set; } = 0;
+        public string CurrentProcessStep { get; set; } = "Idle";
+        public string SystemStatus { get; set; } = "System Online";
+        public string LiveCameraImage { get; set; } = string.Empty;
+        public string AnprCameraStatus { get; set; } = "Ready";
         
         // Exit barrier auto-close (milliseconds) and cancellation token for scheduled close
         private int _exitAutoCloseMs = 30000;
@@ -432,6 +446,7 @@ namespace FullStackSample.Services
             lock (_lock)
             {
                 OnScale = false; // vehicle left the scale/exit sensor
+                CurrentProcessStep = "Truck exited weighbridge. Closing exit barrier...";
             }
             try
             {
@@ -719,6 +734,8 @@ namespace FullStackSample.Services
             catch { }
         }
 
+        public Task TriggerBroadcastAsync() => BroadcastStateAsync();
+
         private async Task BroadcastStateAsync()
         {
             try
@@ -747,7 +764,21 @@ namespace FullStackSample.Services
                     currentTruckPlate = CurrentTruckPlate,
                     currentWeight = CurrentWeight,
                     mode = Mode,
-                    ledMessage = LedMessage
+                    ledMessage = LedMessage,
+
+                    // SCADA database properties
+                    currentDriverName = CurrentDriverName,
+                    currentCustomerName = CurrentCustomerName,
+                    currentMaterialName = CurrentMaterialName,
+                    currentDestination = CurrentDestination,
+                    currentPurchaseOrder = CurrentPurchaseOrder,
+                    grossWeight = GrossWeight,
+                    tareWeight = TareWeight,
+                    netWeight = NetWeight,
+                    currentProcessStep = CurrentProcessStep,
+                    systemStatus = SystemStatus,
+                    liveCameraImage = LiveCameraImage,
+                    anprCameraStatus = AnprCameraStatus
                 };
 
                 if (_hub != null)

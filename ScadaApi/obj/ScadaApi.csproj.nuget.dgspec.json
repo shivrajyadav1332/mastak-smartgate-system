@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\shivra163872\\Project\\mastak-smartgate-system\\ScadaApi\\ScadaApi.csproj": {}
+    "C:\\Users\\shivra163872\\Desktop\\YCC - SCADA - Development\\mastak-smartgate-system\\ScadaApi\\ScadaApi.csproj": {}
   },
   "projects": {
-    "C:\\Users\\shivra163872\\Project\\mastak-smartgate-system\\ScadaApi\\ScadaApi.csproj": {
+    "C:\\Users\\shivra163872\\Desktop\\YCC - SCADA - Development\\mastak-smartgate-system\\ScadaApi\\ScadaApi.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\shivra163872\\Project\\mastak-smartgate-system\\ScadaApi\\ScadaApi.csproj",
+        "projectUniqueName": "C:\\Users\\shivra163872\\Desktop\\YCC - SCADA - Development\\mastak-smartgate-system\\ScadaApi\\ScadaApi.csproj",
         "projectName": "ScadaApi",
-        "projectPath": "C:\\Users\\shivra163872\\Project\\mastak-smartgate-system\\ScadaApi\\ScadaApi.csproj",
+        "projectPath": "C:\\Users\\shivra163872\\Desktop\\YCC - SCADA - Development\\mastak-smartgate-system\\ScadaApi\\ScadaApi.csproj",
         "packagesPath": "C:\\Users\\shivra163872\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\shivra163872\\Project\\mastak-smartgate-system\\ScadaApi\\obj\\",
+        "outputPath": "C:\\Users\\shivra163872\\Desktop\\YCC - SCADA - Development\\mastak-smartgate-system\\ScadaApi\\obj\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\shivra163872\\AppData\\Roaming\\NuGet\\NuGet.Config"

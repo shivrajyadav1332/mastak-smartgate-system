@@ -32,3 +32,37 @@ C:\Users\shivra163872\Project\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0
 C:\Users\shivra163872\Project\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\ScadaApi.pdb
 C:\Users\shivra163872\Project\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\ScadaApi.genruntimeconfig.cache
 C:\Users\shivra163872\Project\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\ref\ScadaApi.dll
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\bin\Debug\net10.0\appsettings.Development.json
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\bin\Debug\net10.0\appsettings.json
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\bin\Debug\net10.0\ScadaApi.staticwebassets.endpoints.json
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\bin\Debug\net10.0\ScadaApi.exe
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\bin\Debug\net10.0\ScadaApi.deps.json
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\bin\Debug\net10.0\ScadaApi.runtimeconfig.json
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\bin\Debug\net10.0\ScadaApi.dll
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\bin\Debug\net10.0\ScadaApi.pdb
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\bin\Debug\net10.0\Microsoft.AspNetCore.OpenApi.dll
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\bin\Debug\net10.0\Microsoft.OpenApi.dll
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\ScadaApi.csproj.AssemblyReference.cache
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\rpswa.dswa.cache.json
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\ScadaApi.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\ScadaApi.AssemblyInfoInputs.cache
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\ScadaApi.AssemblyInfo.cs
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\ScadaApi.csproj.CoreCompileInputs.cache
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\ScadaApi.MvcApplicationPartsAssemblyInfo.cs
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\ScadaApi.MvcApplicationPartsAssemblyInfo.cache
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\ScadaApi.sourcelink.json
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\rjimswa.dswa.cache.json
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\rjsmrazor.dswa.cache.json
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\rjsmcshtml.dswa.cache.json
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\scopedcss\bundle\ScadaApi.styles.css
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\staticwebassets.build.json
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\staticwebassets.build.json.cache
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\staticwebassets.development.json
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\staticwebassets.build.endpoints.json
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\swae.build.ex.cache
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\ScadaApi.csproj.Up2Date
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\ScadaApi.dll
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\refint\ScadaApi.dll
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\ScadaApi.pdb
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\ScadaApi.genruntimeconfig.cache
+C:\Users\shivra163872\Desktop\YCC - SCADA - Development\mastak-smartgate-system\ScadaApi\obj\Debug\net10.0\ref\ScadaApi.dll
