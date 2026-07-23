@@ -83,6 +83,7 @@ export enum VehicleStatus {
   POSITIONING = 'positioning',
   READY = 'ready',
   WEIGHING = 'weighing',
+  LEAVING_SCALE = 'leaving_scale',
   EXITED = 'exited'
 }
 
@@ -119,4 +120,19 @@ export interface ScadaData {
   entryAnprCamera: AnprCamera;
   exitAnprCamera: AnprCamera;
   weighbridge: Weighbridge;
+}
+
+export enum VehicleState {
+  IDLE = 'IDLE',
+  ANPR_DETECTED = 'ANPR_DETECTED',
+  VALIDATING = 'VALIDATING',
+  ENTRY_GRANTED = 'ENTRY_GRANTED',
+  ENTERING = 'ENTERING',
+  ON_SCALE = 'ON_SCALE',
+  WEIGHING = 'WEIGHING',
+  WEIGHT_COMPLETE = 'WEIGHT_COMPLETE',
+  READY_FOR_EXIT = 'READY_FOR_EXIT',
+  EXITING = 'EXITING',
+  COMPLETED = 'COMPLETED',
+  REJECTED = 'REJECTED'
 }

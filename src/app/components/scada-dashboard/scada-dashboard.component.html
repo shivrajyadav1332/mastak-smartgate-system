@@ -32,7 +32,6 @@
           <div class="barrier-controls">
             <button class="btn btn-open" (click)="openEntryBarrier()">OPEN BARRIER</button>
             <button class="btn btn-close" (click)="closeEntryBarrier()">CLOSE BARRIER</button>
-            <button class="btn btn-reset" (click)="resetEntryGate()">RESET</button>
           </div>
         </div>
       </div>
@@ -103,18 +102,23 @@
 
           <div class="status-panel transaction-panel">
             <span class="panel-title">Transaction Info</span>
-            <div class="info-row"><span>Vehicle</span><strong>{{ displayVehicleNumber || '—' }}</strong></div>
-            <div class="info-row"><span>Driver</span><strong>{{ scadaService.currentDriverName() || '—' }}</strong></div>
-            <div class="info-row"><span>Customer</span><strong>{{ scadaService.currentCustomerName() || '—' }}</strong></div>
-            <div class="info-row"><span>Material</span><strong>{{ scadaService.currentMaterialName() || '—' }}</strong></div>
+            <div class="info-row"><span>Vehicle</span><strong>{{ displayVehicleNumber || 'SA-04-ABC-1234' }}</strong></div>
+            <div class="info-row"><span>Transaction No</span><strong>{{ transactionNumber || 'YCC-TXN-20260722-000125' }}</strong></div>
+            <div class="info-row"><span>Driver</span><strong>{{ scadaService.currentDriverName() || 'Mohammed Al-Qahtani' }}</strong></div>
+            <div class="info-row"><span>Customer</span><strong>{{ scadaService.currentCustomerName() || 'Yanbu Cement Company' }}</strong></div>
+            <div class="info-row"><span>Material</span><strong>{{ scadaService.currentMaterialName() || 'OPC 53 Cement Bags' }}</strong></div>
+            <div class="info-row"><span>Approval</span><strong>{{ approvalStatus || '—' }}</strong></div>
+            <div class="info-row"><span>Entry Time</span><strong>{{ entryTime ? (entryTime | date:'short') : '—' }}</strong></div>
+            <div class="info-row"><span>Exit Time</span><strong>{{ exitTime ? (exitTime | date:'short') : '—' }}</strong></div>
             <div class="info-row"><span>Process Step</span><strong>{{ scadaService.currentProcessStep() }}</strong></div>
+            <div class="info-row"><span>Operator Message</span><strong>{{ operatorMessage || scadaService.systemStatus() || '—' }}</strong></div>
           </div>
 
           <div class="status-panel weight-panel">
             <span class="panel-title">Weight Summary</span>
-            <div class="weight-row"><span>Gross</span><strong>{{ scadaService.grossWeight() | number:'1.1-1' }} kg</strong></div>
-            <div class="weight-row"><span>Tare</span><strong>{{ scadaService.tareWeight() | number:'1.1-1' }} kg</strong></div>
-            <div class="weight-row"><span>Net</span><strong>{{ scadaService.netWeight() | number:'1.1-1' }} kg</strong></div>
+            <div class="weight-row"><span>Gross</span><strong>{{ displayGrossWeight }} kg</strong></div>
+            <div class="weight-row"><span>Tare</span><strong>{{ displayTareWeight }} kg</strong></div>
+            <div class="weight-row"><span>Net</span><strong>{{ displayNetWeight }} kg</strong></div>
             <div class="primary-weight">{{ primaryWeightDisplay }} kg</div>
             <div class="current-truck-count">
               <span class="truck-count-label">Current Truck</span>
@@ -153,14 +157,6 @@
           <div class="barrier-controls">
             <button class="btn btn-open" (click)="openExitBarrier()">OPEN</button>
             <button class="btn btn-close" (click)="closeExitBarrier()">CLOSE</button>
-            <button class="btn btn-anpr" (click)="triggerExitDetection()">ANPR</button>
-          </div>
-          <div class="autoclose-row">
-            <label>Exit auto-close (s):</label>
-            <input type="number" min="0" max="600" [(ngModel)]="exitAutoCloseSeconds" (input)="onExitAutoCloseInput()" />
-            <button class="btn btn-set" (click)="setExitAutoCloseSeconds()" [disabled]="!isExitAutoCloseValid()">Set Auto-Close</button>
-            <span class="autoclose-current">Current: {{ scadaService.exitAutoCloseTimer() || exitAutoCloseSeconds }}s</span>
-            <span class="autoclose-msg" [class.saved]="exitAutoCloseMessage === 'Saved'">{{ exitAutoCloseMessage }}</span>
           </div>
         </div>
       </div>
@@ -177,7 +173,7 @@
              [style.left.%]="truckPosition"
              [ngClass]="{
                'truck-entering': scadaService.vehicleStatus() === VehicleStatus.ARRIVED || scadaService.vehicleStatus() === VehicleStatus.VALIDATED,
-               'truck-positioning': scadaService.vehicleStatus() === VehicleStatus.POSITIONING || scadaService.vehicleStatus() === VehicleStatus.READY || scadaService.vehicleStatus() === VehicleStatus.WEIGHING,
+               'truck-positioning': scadaService.vehicleStatus() === VehicleStatus.POSITIONING || scadaService.vehicleStatus() === VehicleStatus.READY || scadaService.vehicleStatus() === VehicleStatus.WEIGHING || scadaService.vehicleStatus() === VehicleStatus.LEAVING_SCALE,
                'truck-exiting': scadaService.vehicleStatus() === VehicleStatus.EXITED
              }">
           <div class="truck-label">Truck</div>

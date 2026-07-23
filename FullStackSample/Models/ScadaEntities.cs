@@ -30,11 +30,17 @@ namespace FullStackSample.Models
         public int Id { get; set; }
         [Required]
         public string VehicleNumber { get; set; } = string.Empty;
+        public string TransactionNumber { get; set; } = string.Empty;
         public string DriverName { get; set; } = string.Empty;
         public string CustomerName { get; set; } = string.Empty;
         public string MaterialName { get; set; } = string.Empty;
         public string Destination { get; set; } = string.Empty;
         public string PurchaseOrder { get; set; } = string.Empty;
+        public string ApprovalStatus { get; set; } = "PENDING";
+        public string AnprResult { get; set; } = string.Empty;
+        public string OperatorName { get; set; } = "System";
+        public DateTime? SlipGeneratedAt { get; set; }
+        public string QrPayload { get; set; } = string.Empty;
 
         // Weights
         public double GrossWeight { get; set; } = 0;

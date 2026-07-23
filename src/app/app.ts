@@ -1,9 +1,9 @@
 import { Component } from '@angular/core';
-import { ScadaDashboardComponent } from './components/scada-dashboard/scada-dashboard.component';
+import { RouterOutlet } from '@angular/router';
 
 @Component({
   selector: 'app-root',
-  imports: [ScadaDashboardComponent],
+  imports: [RouterOutlet],
   templateUrl: './app.html',
   styleUrl: './app.css'
 })

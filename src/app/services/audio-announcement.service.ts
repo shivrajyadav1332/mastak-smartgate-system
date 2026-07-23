@@ -6,7 +6,8 @@ export type AudioAnnouncementEvent =
   | 'TruckMisaligned'
   | 'TruckAligned'
   | 'WeightCaptured'
-  | 'ExitApproved';
+  | 'ExitApproved'
+  | 'VehicleRejected';
 
 export type AudioPlaybackStatus = 'idle' | 'loading' | 'playing' | 'stopped' | 'error';
 
@@ -60,6 +61,12 @@ export class AudioAnnouncementService {
       label: 'Exit Approved',
       message: 'Exit approved. Please proceed to the exit gate.',
       fileName: 'exit-approved.mp3'
+    },
+    VehicleRejected: {
+      event: 'VehicleRejected',
+      label: 'Vehicle Rejected',
+      message: 'Unauthorized vehicle. Please contact security.',
+      fileName: 'unauthorized.mp3'
     }
   };
 

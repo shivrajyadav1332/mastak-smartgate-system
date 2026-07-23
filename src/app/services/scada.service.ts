@@ -10,7 +10,8 @@ import {
   Barrier,
   AnprCamera,
   Weighbridge,
-  WeighbridgeStatus
+  WeighbridgeStatus,
+  VehicleState
 } from '../models/scada.models';
 import { VehicleStatus } from '../models/scada.models';
 import { InputMode } from '../models/scada.models';
@@ -59,11 +60,30 @@ export class ScadaService {
     position: 0
   });
 
-  ledDisplay = computed(() => ({
-    message: this.ledMessage.getValue(),
-    color: '#00ff00',
-    visible: true
-  }));
+  lastScannedPlate = '';
+
+  ledDisplay = computed(() => {
+    const entryPlate = this.entryAnprCamera().detectedPlate;
+    const currentPlate = this.currentTruckPlate();
+    const exitPlate = this.exitAnprCamera().detectedPlate;
+    const plate = currentPlate || entryPlate || exitPlate;
+
+    if (plate && plate.trim()) {
+      const trimmed = plate.trim().toUpperCase();
+      this.lastScannedPlate = trimmed.startsWith('SA-04-') ? trimmed : 'SA-04-' + trimmed;
+    }
+
+    let message = this.ledMessage.getValue();
+    if (this.lastScannedPlate) {
+      message = this.lastScannedPlate;
+    }
+
+    return {
+      message: message,
+      color: '#00ff00',
+      visible: true
+    };
+  });
 
   paSystem = computed(() => ({
     active: this.paActive.getValue(),
@@ -112,6 +132,23 @@ export class ScadaService {
   systemStatus = signal<string>('System Online');
   liveCameraImage = signal<string>('');
   anprCameraStatus = signal<string>('Ready');
+
+  // Database-related signals
+  transactionNumber = signal<string>('');
+  approvalStatus = signal<string>('');
+  entryTime = signal<string>('');
+  exitTime = signal<string>('');
+  operatorMessage = signal<string>('');
+  currentTruckPlate = signal<string>('');
+
+  // State variables for the centralized state machine
+  vehicleValidated = false;
+  truckOnScale = false;
+  weightStable = false;
+  readyForExit = false;
+  entrySensorTriggered = false;
+  exitSensorTriggered = false;
+  currentVehicleState = VehicleState.IDLE;
 
   // (No service-driven truck position in manual mode)
 
@@ -347,38 +384,48 @@ export class ScadaService {
         try {
           if (!payload) return;
           console.debug('SignalR SystemStateChanged received', payload);
-          // Map signals
-          const es = (payload.entrySignal || '').toString().toUpperCase();
-          const xs = (payload.exitSignal || '').toString().toUpperCase();
-          this.setEntrySignal(es === 'GREEN' ? SignalState.GREEN : SignalState.RED);
-          this.setExitSignal(xs === 'GREEN' ? SignalState.GREEN : SignalState.RED);
-
-          // Barriers
-          const entryBarrier = (payload.entryBarrier || '').toString().toUpperCase();
-          const exitBarrier = (payload.exitBarrier || '').toString().toUpperCase();
-          this.entryBarrier.update(b => ({ ...b, state: entryBarrier === 'OPEN' ? BarrierState.OPEN : BarrierState.CLOSED }));
-          this.exitBarrier.update(b => ({ ...b, state: exitBarrier === 'OPEN' ? BarrierState.OPEN : BarrierState.CLOSED }));
-
-          // Weighbridge
+          
+          this.truckOnScale = !!payload.onScale;
+          const stage = (payload.stage || '').toUpperCase();
           const w = Number(payload.currentWeight || 0) || 0;
-          this.weighbridge.update(s => ({ ...s, weight: w, vehicleDetected: !!payload.onScale }));
-
-          // Map onScale to weighbridge status
-          if (payload.onScale) {
-            this.weighbridge.update(s => ({ ...s, status: WeighbridgeStatus.WEIGHING }));
-          } else if (w > 0) {
-            this.weighbridge.update(s => ({ ...s, status: WeighbridgeStatus.COMPLETE }));
-          } else {
-            this.weighbridge.update(s => ({ ...s, status: WeighbridgeStatus.WAITING }));
+          
+          // Map stage to state variables
+          if (stage === 'ARRIVED') {
+            this.vehicleValidated = true;
+            this.weightStable = false;
+            this.readyForExit = false;
+            this.currentVehicleState = VehicleState.ENTRY_GRANTED;
+          } else if (stage === 'ENTRY') {
+            this.vehicleValidated = true;
+            this.weightStable = false;
+            this.readyForExit = false;
+            this.currentVehicleState = VehicleState.ENTERING;
+          } else if (stage === 'WEIGHING') {
+            this.vehicleValidated = true;
+            this.weightStable = false;
+            this.readyForExit = false;
+            this.currentVehicleState = this.truckOnScale ? VehicleState.WEIGHING : VehicleState.ON_SCALE;
+          } else if (stage === 'WEIGHT_CALCULATED' || stage === 'WEIGH_COMPLETED') {
+            this.vehicleValidated = true;
+            this.weightStable = true;
+            this.readyForExit = false;
+            this.currentVehicleState = VehicleState.WEIGHT_COMPLETE;
+          } else if (stage === 'EXIT' || stage === 'EXIT_IN_PROGRESS') {
+            this.vehicleValidated = true;
+            this.weightStable = true;
+            this.readyForExit = true;
+            this.currentVehicleState = !this.truckOnScale ? VehicleState.EXITING : VehicleState.READY_FOR_EXIT;
+          } else if (stage === 'INVALID') {
+            this.vehicleValidated = false;
+            this.currentVehicleState = VehicleState.REJECTED;
+          } else if (stage === 'IDLE') {
+            this.vehicleValidated = false;
+            this.weightStable = false;
+            this.readyForExit = false;
+            this.currentVehicleState = VehicleState.IDLE;
           }
 
-          // LED + current plate
-          this.updateLedMessage(payload.ledMessage || '');
-          if (payload.currentTruckPlate) {
-            try { this.pushLog({ plate: payload.currentTruckPlate, status: 'processed', time: new Date(), weight: w }); } catch (e) {}
-          }
-
-          // Update SQLite properties
+          // SQLite properties (Signals)
           this.currentDriverName.set(payload.currentDriverName || '');
           this.currentCustomerName.set(payload.currentCustomerName || '');
           this.currentMaterialName.set(payload.currentMaterialName || '');
@@ -391,6 +438,19 @@ export class ScadaService {
           this.systemStatus.set(payload.systemStatus || 'System Online');
           this.liveCameraImage.set(payload.liveCameraImage || '');
           this.anprCameraStatus.set(payload.anprCameraStatus || 'Ready');
+          
+          this.transactionNumber.set(payload.transactionNumber || '');
+          this.approvalStatus.set(payload.approvalStatus || '');
+          this.entryTime.set(payload.entryTime || '');
+          this.exitTime.set(payload.exitTime || '');
+          this.operatorMessage.set(payload.operatorMessage || payload.currentProcessStep || 'Idle');
+          this.currentTruckPlate.set(payload.currentTruckPlate || '');
+
+          if (payload.currentTruckPlate) {
+            try { this.pushLog({ plate: payload.currentTruckPlate, status: 'processed', time: new Date(), weight: w }); } catch (e) {}
+          }
+
+          this.updateSystemState(w, payload.ledMessage);
         } catch (e) {
           console.warn('SystemStateChanged handler failed', e);
         }
@@ -401,37 +461,48 @@ export class ScadaService {
         try {
           if (!payload) return;
           console.debug('SignalR ReceiveSystemStatus received', payload);
-          // Map signals
-          const es = (payload.entrySignal || '').toString().toUpperCase();
-          const xs = (payload.exitSignal || '').toString().toUpperCase();
-          this.setEntrySignal(es === 'GREEN' ? SignalState.GREEN : SignalState.RED);
-          this.setExitSignal(xs === 'GREEN' ? SignalState.GREEN : SignalState.RED);
-
-          // Barriers
-          const entryBarrier = (payload.entryBarrier || '').toString().toUpperCase();
-          const exitBarrier = (payload.exitBarrier || '').toString().toUpperCase();
-          this.entryBarrier.update(b => ({ ...b, state: entryBarrier === 'OPEN' ? BarrierState.OPEN : BarrierState.CLOSED }));
-          this.exitBarrier.update(b => ({ ...b, state: exitBarrier === 'OPEN' ? BarrierState.OPEN : BarrierState.CLOSED }));
-
-          // Weighbridge
+          
+          this.truckOnScale = !!payload.onScale;
+          const stage = (payload.stage || '').toUpperCase();
           const w = Number(payload.currentWeight || 0) || 0;
-          this.weighbridge.update(s => ({ ...s, weight: w, vehicleDetected: !!payload.onScale }));
-
-          if (payload.onScale) {
-            this.weighbridge.update(s => ({ ...s, status: WeighbridgeStatus.WEIGHING }));
-          } else if (w > 0) {
-            this.weighbridge.update(s => ({ ...s, status: WeighbridgeStatus.COMPLETE }));
-          } else {
-            this.weighbridge.update(s => ({ ...s, status: WeighbridgeStatus.WAITING }));
+          
+          // Map stage to state variables
+          if (stage === 'ARRIVED') {
+            this.vehicleValidated = true;
+            this.weightStable = false;
+            this.readyForExit = false;
+            this.currentVehicleState = VehicleState.ENTRY_GRANTED;
+          } else if (stage === 'ENTRY') {
+            this.vehicleValidated = true;
+            this.weightStable = false;
+            this.readyForExit = false;
+            this.currentVehicleState = VehicleState.ENTERING;
+          } else if (stage === 'WEIGHING') {
+            this.vehicleValidated = true;
+            this.weightStable = false;
+            this.readyForExit = false;
+            this.currentVehicleState = this.truckOnScale ? VehicleState.WEIGHING : VehicleState.ON_SCALE;
+          } else if (stage === 'WEIGHT_CALCULATED' || stage === 'WEIGH_COMPLETED') {
+            this.vehicleValidated = true;
+            this.weightStable = true;
+            this.readyForExit = false;
+            this.currentVehicleState = VehicleState.WEIGHT_COMPLETE;
+          } else if (stage === 'EXIT' || stage === 'EXIT_IN_PROGRESS') {
+            this.vehicleValidated = true;
+            this.weightStable = true;
+            this.readyForExit = true;
+            this.currentVehicleState = !this.truckOnScale ? VehicleState.EXITING : VehicleState.READY_FOR_EXIT;
+          } else if (stage === 'INVALID') {
+            this.vehicleValidated = false;
+            this.currentVehicleState = VehicleState.REJECTED;
+          } else if (stage === 'IDLE') {
+            this.vehicleValidated = false;
+            this.weightStable = false;
+            this.readyForExit = false;
+            this.currentVehicleState = VehicleState.IDLE;
           }
 
-          // LED + current plate
-          this.updateLedMessage(payload.ledMessage || '');
-          if (payload.currentTruckPlate) {
-            try { this.pushLog({ plate: payload.currentTruckPlate, status: 'processed', time: new Date(), weight: w }); } catch (e) {}
-          }
-
-          // Update SQLite properties
+          // SQLite properties (Signals)
           this.currentDriverName.set(payload.currentDriverName || '');
           this.currentCustomerName.set(payload.currentCustomerName || '');
           this.currentMaterialName.set(payload.currentMaterialName || '');
@@ -444,12 +515,19 @@ export class ScadaService {
           this.systemStatus.set(payload.systemStatus || 'System Online');
           this.liveCameraImage.set(payload.liveCameraImage || '');
           this.anprCameraStatus.set(payload.anprCameraStatus || 'Ready');
+          
+          this.transactionNumber.set(payload.transactionNumber || '');
+          this.approvalStatus.set(payload.approvalStatus || '');
+          this.entryTime.set(payload.entryTime || '');
+          this.exitTime.set(payload.exitTime || '');
+          this.operatorMessage.set(payload.operatorMessage || payload.currentProcessStep || 'Idle');
+          this.currentTruckPlate.set(payload.currentTruckPlate || '');
 
-          // If backend indicates exit barrier is open, set awaiting flag so UI can notify pass when sensor/ANPR detects
-          try {
-            const exitBarrierUpper = (payload.exitBarrier || '').toString().toUpperCase();
-            if (exitBarrierUpper === 'OPEN') this.awaitingExitPass = true;
-          } catch (e) {}
+          if (payload.currentTruckPlate) {
+            try { this.pushLog({ plate: payload.currentTruckPlate, status: 'processed', time: new Date(), weight: w }); } catch (e) {}
+          }
+
+          this.updateSystemState(w, payload.ledMessage);
         } catch (e) {
           console.warn('ReceiveSystemStatus handler failed', e);
         }
@@ -460,7 +538,10 @@ export class ScadaService {
         try {
           console.debug('SignalR ExitSignalChanged', val);
           const xs = (val || '').toString().toUpperCase();
-          this.setExitSignal(xs === 'GREEN' ? SignalState.GREEN : SignalState.RED);
+          if (xs === 'GREEN') {
+            this.readyForExit = true;
+          }
+          this.updateSystemState();
         } catch (e) { console.warn('ExitSignalChanged handler', e); }
       });
 
@@ -472,39 +553,48 @@ export class ScadaService {
       this.hubConnection.on('ExitBarrierOpened', () => {
         this.backendExitSequenceActive = true;
         this.awaitingExitPass = true;
-        this.applyExitBarrierState(BarrierState.OPEN);
+        this.exitSensorTriggered = true;
+        this.updateSystemState();
       });
 
       this.hubConnection.on('ExitBarrierClosed', () => {
         this.awaitingExitPass = false;
         this.backendExitSequenceActive = false;
         this.exitAutoCloseTimer.set(0);
-        this.applyExitBarrierState(BarrierState.CLOSED);
+        this.exitSensorTriggered = false;
+        this.updateSystemState();
       });
 
       this.hubConnection.on('ExitBarrierChanged', (val: any) => {
         try {
           console.debug('SignalR ExitBarrierChanged', val);
           const b = (val || '').toString().toUpperCase();
+          this.exitSensorTriggered = b === 'OPEN';
           if (b === 'OPEN') {
             this.backendExitSequenceActive = true;
-            try { this.awaitingExitPass = true; } catch (e) {}
-            this.applyExitBarrierState(BarrierState.OPEN);
+            this.awaitingExitPass = true;
           } else {
-            try { this.awaitingExitPass = false; } catch (e) {}
             this.backendExitSequenceActive = false;
+            this.awaitingExitPass = false;
             this.exitAutoCloseTimer.set(0);
-            this.applyExitBarrierState(BarrierState.CLOSED);
           }
+          this.updateSystemState();
         } catch (e) { console.warn('ExitBarrierChanged handler', e); }
       });
 
       this.hubConnection.on('EntryBarrierChanged', (val: any) => {
-        try { console.debug('SignalR EntryBarrierChanged', val); const b = (val || '').toString().toUpperCase(); if (b === 'OPEN') this.openEntryBarrier(); else this.closeEntryBarrier(); } catch (e) { console.warn('EntryBarrierChanged handler', e); }
+        try {
+          console.debug('SignalR EntryBarrierChanged', val);
+          const b = (val || '').toString().toUpperCase();
+          this.entrySensorTriggered = b === 'OPEN';
+          this.updateSystemState();
+        } catch (e) { console.warn('EntryBarrierChanged handler', e); }
       });
 
       this.hubConnection.on('EntrySignalChanged', (val: any) => {
-        try { console.debug('SignalR EntrySignalChanged', val); const es = (val || '').toString().toUpperCase(); this.setEntrySignal(es === 'GREEN' ? SignalState.GREEN : SignalState.RED); } catch (e) { console.warn('EntrySignalChanged handler', e); }
+        try {
+          console.debug('SignalR EntrySignalChanged', val);
+        } catch (e) { console.warn('EntrySignalChanged handler', e); }
       });
 
       // Keep previous VehicleAdded handler for compatibility
@@ -524,36 +614,18 @@ export class ScadaService {
           const ev = (payload.event || payload.eventName || payload['@event'] || '').toString().toUpperCase();
           console.debug('SignalR DeviceEvent received', ev, payload);
 
-          if (ev === 'VEHICLE_ENTRY' || ev === 'WEIGHING') {
-            // force exit closed while vehicle is entering/weighing
-            try {
-              this.setExitSignal(SignalState.RED);
-              this.exitBarrierState.next(BarrierState.CLOSED);
-              // animate immediate close
-              this.animateBarrier('exit', false);
-            } catch (e) { console.warn('DeviceEvent VEHICLE_ENTRY handler failed', e); }
+          if (ev === 'VEHICLE_ENTRY') {
+            this.currentVehicleState = VehicleState.ENTERING;
+          } else if (ev === 'WEIGHING') {
+            this.currentVehicleState = VehicleState.WEIGHING;
+          } else if (ev === 'WEIGH_COMPLETE') {
+            this.currentVehicleState = VehicleState.WEIGHT_COMPLETE;
+          } else if (ev === 'EXIT_OPEN') {
+            this.currentVehicleState = VehicleState.EXITING;
+          } else if (ev === 'EXIT_CLOSE') {
+            this.currentVehicleState = VehicleState.COMPLETED;
           }
-
-          if (ev === 'WEIGH_COMPLETE') {
-            try { this.setExitSignal(SignalState.RED); } catch (e) { console.warn('DeviceEvent WEIGH_COMPLETE handler failed', e); }
-          }
-
-          if (ev === 'EXIT_OPEN') {
-            try {
-              this.backendExitSequenceActive = true;
-              this.setExitSignal(SignalState.GREEN);
-              this.applyExitBarrierState(BarrierState.OPEN);
-            } catch (e) { console.warn('DeviceEvent EXIT_OPEN handler failed', e); }
-          }
-
-          if (ev === 'EXIT_CLOSE') {
-            try {
-              this.setExitSignal(SignalState.RED);
-              this.exitAutoCloseTimer.set(0);
-              this.backendExitSequenceActive = false;
-              this.applyExitBarrierState(BarrierState.CLOSED);
-            } catch (e) { console.warn('DeviceEvent EXIT_CLOSE handler failed', e); }
-          }
+          this.updateSystemState();
         } catch (e) { console.warn('DeviceEvent handler failed', e); }
       });
 
@@ -561,11 +633,11 @@ export class ScadaService {
       this.hubConnection.on('OnScaleChanged', (val: any) => {
         try {
           const onScale = !!val;
-          this.weighbridge.update(w => ({ ...w, vehicleDetected: onScale }));
-          if (onScale) this.weighbridge.update(w => ({ ...w, status: WeighbridgeStatus.WEIGHING }));
-          else this.weighbridge.update(w => ({ ...w, status: WeighbridgeStatus.COMPLETE }));
-            // When truck leaves the scale, evaluate whether exit barrier may open
-            try { if (!onScale) this.checkExitBarrier(); } catch (e) { }
+          this.truckOnScale = onScale;
+          if (onScale) {
+            this.currentVehicleState = VehicleState.ON_SCALE;
+          }
+          this.updateSystemState();
         } catch (e) { console.warn('OnScaleChanged handler', e); }
       });
 
@@ -575,11 +647,11 @@ export class ScadaService {
           const plate = payload?.plate || payload?.plateNumber || payload?.PlateNumber;
           const status = (payload?.status || '').toString().toUpperCase();
           const weight = payload?.weight ?? null;
+          this.currentTruckPlate.set(plate || '');
           if (status === 'ACCEPTED') {
+            this.vehicleValidated = true;
+            this.currentVehicleState = VehicleState.ENTRY_GRANTED;
             this.addLog({ plate, status: 'ACCEPTED', time: new Date(), weight });
-            // open entry barrier for accepted vehicles, then close after a short delay
-            this.openEntryBarrier();
-            setTimeout(() => { this.closeEntryBarrier(); }, 3000);
           } else {
             this.addLog({ plate, status: 'REJECTED', time: new Date(), weight });
             this.updateLedMessage(`REJECTED: ${payload?.reason || ''}`);
@@ -931,39 +1003,10 @@ export class ScadaService {
       const truckOnBridge = !!wb.vehicleDetected;
       const stableWeight = (wb.weight || 0) > 0 && measurementCompleted;
 
-      if (measurementCompleted && stableWeight && !truckOnBridge) {
-        // Open exit barrier and set signal green
-        this.setExitSignal(SignalState.GREEN);
-        this.openExitBarrier();
-
-        // Start auto-close timer
-        try {
-          if (this.exitAutoCloseTimeout) { clearTimeout(this.exitAutoCloseTimeout); this.exitAutoCloseTimeout = null; }
-        } catch (e) { }
-
-        // set a countdown value (seconds) for UI
-        const secs = Math.max(0, Math.floor(this.exitAutoCloseMs / 1000));
-        this.exitAutoCloseTimer.set(secs);
-
-        if (this.exitAutoCloseMs > 0) {
-          // Update countdown every second
-          let remaining = Math.floor(this.exitAutoCloseMs / 1000);
-          this.exitAutoCloseTimeout = setInterval(() => {
-            remaining = Math.max(0, remaining - 1);
-            this.exitAutoCloseTimer.set(remaining);
-            if (remaining <= 0) {
-              try { clearInterval(this.exitAutoCloseTimeout); } catch (e) { }
-              this.exitAutoCloseTimeout = null;
-              this.setExitSignal(SignalState.RED);
-              this.closeExitBarrier();
-              this.exitAutoCloseTimer.set(0);
-            }
-          }, 1000);
-        }
-      } else {
-        // Ensure exit is closed and signal is red when conditions not met
-        this.setExitSignal(SignalState.RED);
-        // Do not force-close here if backend currently owns state, but animate closed locally
+      // Keep the exit side safe until the backend explicitly opens it after
+      // validation, database writes, and slip generation are complete.
+      this.setExitSignal(SignalState.RED);
+      if (!measurementCompleted || !stableWeight || truckOnBridge) {
         this.applyExitBarrierState(BarrierState.CLOSED);
       }
     } catch (e) {
@@ -989,6 +1032,7 @@ export class ScadaService {
    * Used by the UI "Reset System" button.
    */
   resetSystem(): void {
+    this.lastScannedPlate = '';
     // Invalidate any in-flight timers/animations from an older cycle.
     this.cycleId++;
 
@@ -1365,8 +1409,15 @@ export class ScadaService {
 
     (async () => {
       // reset messages and status
-      this.updateLedMessage('VEHICLE DETECTED');
-      this.vehicleStatus.set(VehicleStatus.ARRIVED);
+      this.vehicleValidated = false;
+      this.truckOnScale = false;
+      this.weightStable = false;
+      this.readyForExit = false;
+      this.entrySensorTriggered = false;
+      this.exitSensorTriggered = false;
+      this.currentVehicleState = VehicleState.ANPR_DETECTED;
+      
+      this.updateSystemState(0, 'VEHICLE DETECTED');
       this.mode.set(InputMode.ANPR);
       this.alertMessage.next('');
 
@@ -1380,101 +1431,105 @@ export class ScadaService {
 
       const anprOk = await this.validateAnprApi(plate);
       if (!anprOk) {
-        this.vehicleStatus.set(VehicleStatus.INVALID);
-        this.updateLedMessage('INVALID VEHICLE');
-        this.togglePaSystem(true, 'Access Denied');
-        this.setEntrySignal(SignalState.RED);
-        this.addLog({ plate, status: 'rejected', time: new Date(), weight: null, consignment: null, mode: this.mode() });
-        await sleep(2500);
-        this.togglePaSystem(false, 'No PA Announcement');
-        this.updateLedMessage('NO LED MESSAGE');
+        this.vehicleValidated = false;
+        this.currentVehicleState = VehicleState.REJECTED;
+        this.updateSystemState(0, 'INVALID VEHICLE - ENTRY DENIED');
+        this.addLog({ plate, status: 'REJECTED', time: new Date(), weight: null, consignment: null, mode: this.mode() });
+        await sleep(7000);
+        this.togglePaSystemLocally(false, 'No PA Announcement');
+        this.currentVehicleState = VehicleState.IDLE;
+        this.updateSystemState();
 
         if (this.continuousMode) {
           // let the vehicle exit so movement continues; keep UI in non-IDLE state
-          this.setExitSignal(SignalState.GREEN);
-          this.openExitBarrier();
+          this.currentVehicleState = VehicleState.EXITING;
+          this.updateSystemState();
           await sleep(2000);
-          this.closeExitBarrier();
-          this.setExitSignal(SignalState.RED);
-          this.vehicleStatus.set(VehicleStatus.ARRIVED);
+          this.currentVehicleState = VehicleState.IDLE;
+          this.updateSystemState();
           this.isProcessing = false;
           this.scheduleAutoNextCycle(this.autoModeIntervalMs);
           return;
         }
 
-        this.vehicleStatus.set(VehicleStatus.IDLE);
         this.isProcessing = false;
         return;
       }
 
       const assignment = this.assignments[plate];
       if (!assignment) {
-        this.vehicleStatus.set(VehicleStatus.INVALID);
-        this.updateLedMessage('INVALID VEHICLE');
-        this.setEntrySignal(SignalState.RED);
-        this.addLog({ plate, status: 'rejected', time: new Date(), weight: null, consignment: null, mode: this.mode() });
-        await sleep(2500);
-        this.updateLedMessage('NO LED MESSAGE');
+        this.vehicleValidated = false;
+        this.currentVehicleState = VehicleState.REJECTED;
+        this.updateSystemState(0, 'INVALID VEHICLE - ENTRY DENIED');
+        this.addLog({ plate, status: 'REJECTED', time: new Date(), weight: null, consignment: null, mode: this.mode() });
+        await sleep(7000);
+        this.currentVehicleState = VehicleState.IDLE;
+        this.updateSystemState();
 
         if (this.continuousMode) {
-          this.setExitSignal(SignalState.GREEN);
-          this.openExitBarrier();
+          this.currentVehicleState = VehicleState.EXITING;
+          this.updateSystemState();
           await sleep(2000);
-          this.closeExitBarrier();
-          this.setExitSignal(SignalState.RED);
-          this.vehicleStatus.set(VehicleStatus.ARRIVED);
+          this.currentVehicleState = VehicleState.IDLE;
+          this.updateSystemState();
           this.isProcessing = false;
           this.scheduleAutoNextCycle(this.autoModeIntervalMs);
           return;
         }
 
-        this.vehicleStatus.set(VehicleStatus.IDLE);
         this.isProcessing = false;
         return;
       }
 
       // Assigned vehicle: proceed
-      this.vehicleStatus.set(VehicleStatus.VALIDATED);
-      this.updateLedMessage(`TRUCK ${plate} VALIDATED`);
-      this.setEntrySignal(SignalState.GREEN);
+      this.vehicleValidated = true;
+      this.currentVehicleState = VehicleState.ENTRY_GRANTED;
+      this.updateSystemState(0, `TRUCK ${plate} VALIDATED`);
 
       // Open entry barrier (animation 1s inside animateBarrier)
       await sleep(1000);
-      this.openEntryBarrier();
 
       // Start the truck moving toward the weighbridge center while the barrier opens
       // Wait for barrier to open and initial movement
-      await sleep(1000);
+      await sleep(1200);
 
       // Begin truck movement toward center (entry barrier will close after truck crosses)
-      this.setEntrySignal(SignalState.RED);
-      this.vehicleStatus.set(VehicleStatus.POSITIONING);
-      this.updateLedMessage('TRUCK ENTERED WB');
+      this.entrySensorTriggered = true;
+      this.currentVehicleState = VehicleState.ENTERING;
+      this.updateSystemState();
 
       // Wait for entering animation (handled by CSS) to complete
-      await sleep(2500);
+      await sleep(3400);
 
       // After truck has reached center, close entry barrier (it has cleared the entry)
-      this.closeEntryBarrier();
-
-      // Truck reached weighbridge center
-      this.updateLedMessage('POSITION OK');
-      this.vehicleStatus.set(VehicleStatus.READY);
+      this.entrySensorTriggered = false;
+      this.truckOnScale = true;
+      this.currentVehicleState = VehicleState.ON_SCALE;
+      this.updateSystemState();
 
       // Start weighing phase
-      await sleep(1000);
-      this.updateLedMessage('WEIGHING IN PROGRESS');
-      this.vehicleStatus.set(VehicleStatus.WEIGHING);
+      await sleep(1200);
+      this.currentVehicleState = VehicleState.WEIGHING;
+      this.updateSystemState();
       this.startWeighing();
-
       // Wait for weighing to finish (weighing sim ~3000ms)
       await sleep(3000);
       const wb = this.weighbridge();
-      this.updateLedMessage(`WEIGHT: ${wb.weight} KG`);
-      this.togglePaSystem(true, 'Weighing Completed, Please Proceed');
+      const stableWeight = wb.weight;
+      this.weightStable = true;
+      this.currentVehicleState = VehicleState.WEIGHT_COMPLETE;
+      this.updateSystemState(stableWeight);
+      this.togglePaSystemLocally(true, 'Weighing Completed, Please Proceed');
+      await sleep(1500);
 
-      // Exit sequence is backend-owned after weigh complete; SignalR updates barrier/signal state.
-      await sleep(1000);
+      // Truck Leaves Scale (moves off scale towards the exit barrier)
+      this.truckOnScale = false;
+      this.readyForExit = true;
+      this.currentVehicleState = VehicleState.READY_FOR_EXIT;
+      this.updateSystemState(stableWeight);
+      await sleep(1800); // sleep for the animation duration (positions at 75%)
+
+      // Exit sequence is backend-owned; trigger it now to turn signal green and open barrier
       try {
         // mark backend as owner of exit barrier transitions for this cycle
         this.backendExitSequenceActive = true;
@@ -1482,34 +1537,41 @@ export class ScadaService {
           error: (e) => console.warn('weigh complete trigger failed', e)
         });
       } catch (e) {
-        console.warn('weigh complete trigger failed', e);
+        // Fallback exit sequence if backend is unavailable or offline
+        this.currentVehicleState = VehicleState.EXITING;
+        this.updateSystemState();
       }
 
+      // Allow 1.0s for exit signal green / exit barrier open sequence to propagate and start
+      await sleep(1000);
+
       // Trigger exit animation by setting status to EXITED and wait for it to complete
-      this.vehicleStatus.set(VehicleStatus.EXITED);
-      await sleep(2400);
+      this.currentVehicleState = VehicleState.EXITING;
+      this.updateSystemState();
+      await sleep(1800); // sleep for exit crossing animation (75% to 100%)
       this.simulateExitVehicleDetection();
 
       // log success
-      this.addLog({ plate, status: 'processed', time: new Date(), weight: wb.weight, consignment: assignment.consignment, mode: this.mode() });
+      this.addLog({ plate, status: 'processed', time: new Date(), weight: stableWeight, consignment: assignment.consignment, mode: this.mode() });
 
       // Reset
       await sleep(1000);
-      this.resetWeighbridge();
-      this.updateLedMessage('NO LED MESSAGE');
-      this.togglePaSystem(false, 'No PA Announcement');
+      this.currentVehicleState = VehicleState.COMPLETED;
+      this.updateSystemState();
+      await sleep(1000);
+      this.currentVehicleState = VehicleState.IDLE;
+      this.updateSystemState();
 
       // If continuous mode is active, immediately schedule the next cycle
       if (this.continuousMode) {
         // keep UI in a non-IDLE state to show continuous movement
-        this.vehicleStatus.set(VehicleStatus.ARRIVED);
+        this.currentVehicleState = VehicleState.ANPR_DETECTED;
+        this.updateSystemState(0, 'VEHICLE DETECTED');
         this.isProcessing = false;
         this.scheduleAutoNextCycle(this.autoModeIntervalMs);
         return;
       }
 
-      // Normal (non-continuous): set to IDLE to allow manual interactions
-      this.vehicleStatus.set(VehicleStatus.IDLE);
       this.isProcessing = false;
     })();
 
@@ -1532,5 +1594,151 @@ export class ScadaService {
       exitAnprCamera: this.exitAnprCamera(),
       weighbridge: this.weighbridge()
     };
+  }
+
+  updateSystemState(currentWeight: number = 0, ledMsg?: string): void {
+    // Enforce safety constraints: exit barrier must NEVER open while truck is on scale
+    if (this.truckOnScale) {
+      if (this.currentVehicleState === VehicleState.EXITING) {
+        // Enforce the rule: cannot exit while on scale!
+        this.currentVehicleState = VehicleState.READY_FOR_EXIT;
+      }
+    } else {
+      if (this.vehicleValidated && this.weightStable && this.readyForExit && !this.truckOnScale) {
+        this.currentVehicleState = VehicleState.EXITING;
+      }
+    }
+
+    switch (this.currentVehicleState) {
+      case VehicleState.IDLE:
+        this.setEntrySignal(SignalState.RED);
+        this.setExitSignal(SignalState.RED);
+        this.applyBarrierStateLocally('entry', BarrierState.CLOSED);
+        this.applyBarrierStateLocally('exit', BarrierState.CLOSED);
+        this.updateLedMessageLocally('No LED message');
+        this.togglePaSystemLocally(false, 'No PA Announcement');
+        this.vehicleStatus.set(VehicleStatus.IDLE);
+        this.weighbridge.update(w => ({ ...w, active: false, weight: 0, status: WeighbridgeStatus.WAITING, vehicleDetected: false }));
+        break;
+
+      case VehicleState.ANPR_DETECTED:
+      case VehicleState.VALIDATING:
+        this.setEntrySignal(SignalState.RED);
+        this.setExitSignal(SignalState.RED);
+        this.applyBarrierStateLocally('entry', BarrierState.CLOSED);
+        this.applyBarrierStateLocally('exit', BarrierState.CLOSED);
+        this.updateLedMessageLocally(ledMsg || 'VEHICLE DETECTED');
+        this.vehicleStatus.set(VehicleStatus.ARRIVED);
+        break;
+
+      case VehicleState.ENTRY_GRANTED:
+        this.setEntrySignal(SignalState.GREEN);
+        this.setExitSignal(SignalState.RED);
+        this.applyBarrierStateLocally('entry', BarrierState.OPEN);
+        this.applyBarrierStateLocally('exit', BarrierState.CLOSED);
+        this.updateLedMessageLocally(ledMsg || 'TRUCK VALIDATED');
+        this.vehicleStatus.set(VehicleStatus.VALIDATED);
+        break;
+
+      case VehicleState.ENTERING:
+        this.setEntrySignal(SignalState.RED);
+        this.setExitSignal(SignalState.RED);
+        this.applyBarrierStateLocally('entry', BarrierState.CLOSED);
+        this.applyBarrierStateLocally('exit', BarrierState.CLOSED);
+        this.updateLedMessageLocally(ledMsg || 'TRUCK ENTERED WB');
+        this.vehicleStatus.set(VehicleStatus.POSITIONING);
+        break;
+
+      case VehicleState.ON_SCALE:
+        this.setEntrySignal(SignalState.RED);
+        this.setExitSignal(SignalState.RED);
+        this.applyBarrierStateLocally('entry', BarrierState.CLOSED);
+        this.applyBarrierStateLocally('exit', BarrierState.CLOSED);
+        this.updateLedMessageLocally(ledMsg || 'POSITION OK');
+        this.vehicleStatus.set(VehicleStatus.READY);
+        this.weighbridge.update(w => ({ ...w, active: true, weight: currentWeight, status: WeighbridgeStatus.WAITING, vehicleDetected: true }));
+        break;
+
+      case VehicleState.WEIGHING:
+        this.setEntrySignal(SignalState.RED);
+        this.setExitSignal(SignalState.RED);
+        this.applyBarrierStateLocally('entry', BarrierState.CLOSED);
+        this.applyBarrierStateLocally('exit', BarrierState.CLOSED);
+        this.updateLedMessageLocally(ledMsg || 'WEIGHING IN PROGRESS');
+        this.vehicleStatus.set(VehicleStatus.WEIGHING);
+        this.weighbridge.update(w => ({ ...w, active: true, weight: currentWeight, status: WeighbridgeStatus.WEIGHING, vehicleDetected: true }));
+        break;
+
+      case VehicleState.WEIGHT_COMPLETE:
+        this.setEntrySignal(SignalState.RED);
+        this.setExitSignal(SignalState.RED);
+        this.applyBarrierStateLocally('entry', BarrierState.CLOSED);
+        this.applyBarrierStateLocally('exit', BarrierState.CLOSED);
+        this.updateLedMessageLocally(ledMsg || `WEIGHT: ${currentWeight} KG`);
+        this.vehicleStatus.set(VehicleStatus.READY);
+        this.weighbridge.update(w => ({ ...w, active: true, weight: currentWeight, status: WeighbridgeStatus.COMPLETE, vehicleDetected: true }));
+        break;
+
+      case VehicleState.READY_FOR_EXIT:
+        this.setEntrySignal(SignalState.RED);
+        this.setExitSignal(SignalState.RED);
+        this.applyBarrierStateLocally('entry', BarrierState.CLOSED);
+        this.applyBarrierStateLocally('exit', BarrierState.CLOSED);
+        this.updateLedMessageLocally(ledMsg || 'STOP AT BARRIER');
+        this.vehicleStatus.set(VehicleStatus.LEAVING_SCALE);
+        this.weighbridge.update(w => ({ ...w, active: true, weight: 0, status: WeighbridgeStatus.COMPLETE, vehicleDetected: false }));
+        break;
+
+      case VehicleState.EXITING:
+        this.setEntrySignal(SignalState.RED);
+        this.setExitSignal(SignalState.GREEN);
+        this.applyBarrierStateLocally('entry', BarrierState.CLOSED);
+        this.applyBarrierStateLocally('exit', BarrierState.OPEN);
+        this.updateLedMessageLocally(ledMsg || 'PROCEED TO EXIT');
+        this.vehicleStatus.set(VehicleStatus.EXITED);
+        this.weighbridge.update(w => ({ ...w, active: true, weight: 0, status: WeighbridgeStatus.COMPLETE, vehicleDetected: false }));
+        break;
+
+      case VehicleState.COMPLETED:
+        this.setEntrySignal(SignalState.RED);
+        this.setExitSignal(SignalState.RED);
+        this.applyBarrierStateLocally('entry', BarrierState.CLOSED);
+        this.applyBarrierStateLocally('exit', BarrierState.CLOSED);
+        this.updateLedMessageLocally(ledMsg || 'READY FOR NEXT VEHICLE');
+        this.vehicleStatus.set(VehicleStatus.IDLE);
+        break;
+
+      case VehicleState.REJECTED:
+        this.setEntrySignal(SignalState.RED);
+        this.setExitSignal(SignalState.RED);
+        this.applyBarrierStateLocally('entry', BarrierState.CLOSED);
+        this.applyBarrierStateLocally('exit', BarrierState.CLOSED);
+        this.updateLedMessageLocally(ledMsg || 'INVALID VEHICLE - ENTRY DENIED');
+        this.togglePaSystemLocally(true, 'Unauthorized vehicle. Please contact security.');
+        this.vehicleStatus.set(VehicleStatus.INVALID);
+        break;
+    }
+  }
+
+  private applyBarrierStateLocally(type: 'entry' | 'exit', state: BarrierState): void {
+    const barrier = type === 'entry' ? this.entryBarrier : this.exitBarrier;
+    const bs = type === 'entry' ? this.entryBarrierState : this.exitBarrierState;
+    if (barrier().state !== state) {
+      bs.next(state);
+      this.animateBarrier(type, state === BarrierState.OPEN);
+    }
+  }
+
+  private updateLedMessageLocally(message: string): void {
+    this.ledMessage.next(message);
+  }
+
+  private togglePaSystemLocally(active: boolean, message?: string): void {
+    this.paActive.next(active);
+    if (message) {
+      this.paMessage.next(message);
+    } else {
+      this.paMessage.next(active ? 'PA System Active' : 'No PA Announcement');
+    }
   }
 }

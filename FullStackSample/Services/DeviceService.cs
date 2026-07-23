@@ -7,6 +7,9 @@ using System.IO;
 using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
 using FullStackSample.Hubs;
+using Microsoft.Extensions.DependencyInjection;
+using FullStackSample.Data;
+using FullStackSample.Models;
 
 namespace FullStackSample.Services
 {
@@ -77,8 +80,11 @@ namespace FullStackSample.Services
         public double GrossWeight { get; set; } = 0;
         public double TareWeight { get; set; } = 0;
         public double NetWeight { get; set; } = 0;
+        public string TransactionNumber { get; set; } = string.Empty;
+        public string ApprovalStatus { get; set; } = "PENDING";
         public string CurrentProcessStep { get; set; } = "Idle";
         public string SystemStatus { get; set; } = "System Online";
+        public string OperatorMessage { get; set; } = string.Empty;
         public string LiveCameraImage { get; set; } = string.Empty;
         public string AnprCameraStatus { get; set; } = "Ready";
         
@@ -90,6 +96,7 @@ namespace FullStackSample.Services
         // Vehicle-passed signaling for wait_for_vehicle_pass
         private TaskCompletionSource<bool>? _vehiclePassedTcs = null;
         private bool _exitSequenceRunning = false;
+        private bool _exitClearanceGranted = false;
 
         // In-memory logs
         private readonly List<DeviceLogEntry> _logs = new List<DeviceLogEntry>();
@@ -117,9 +124,12 @@ namespace FullStackSample.Services
             public object BackendProcess { get; set; } = new { step = string.Empty, nextAction = string.Empty, message = string.Empty };
         }
 
-        public DeviceService(IHubContext<VehicleHub> hub, ExcelPlateService? excel = null)
+        private readonly IServiceProvider _serviceProvider;
+
+        public DeviceService(IHubContext<VehicleHub> hub, IServiceProvider serviceProvider, ExcelPlateService? excel = null)
         {
             _hub = hub;
+            _serviceProvider = serviceProvider;
             // If an Excel service is provided, try to load a default plates file from disk
             try
             {
@@ -241,6 +251,22 @@ namespace FullStackSample.Services
             _ = BroadcastStateAsync();
         }
 
+        public async Task BeginEntryProcessAsync()
+        {
+            try { _exitAutoCloseCts?.Cancel(); _exitAutoCloseCts = null; } catch { }
+            lock (_lock)
+            {
+                _exitClearanceGranted = false;
+                Stage = "ENTRY";
+                EntrySignal = "RED";
+                EntryBarrier = "CLOSED";
+                ExitSignal = "RED";
+                ExitBarrier = "CLOSED";
+            }
+            await BroadcastStateAsync();
+            await _hub.Clients.All.SendAsync("TruckEntryChanged", new { stage = Stage, plateNumber = CurrentTruckPlate, onScale = OnScale });
+        }
+
         public void CloseEntryBarrier()
         {
             lock (_lock)
@@ -254,9 +280,9 @@ namespace FullStackSample.Services
         {
             lock (_lock)
             {
-                // Safety: never open exit during ENTRY/WEIGHING stages
-                if (string.Equals(Stage, "ENTRY", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(Stage, "WEIGHING", StringComparison.OrdinalIgnoreCase))
+                // Exit may only open from the completed OUT workflow, and never while truck is on scale.
+                if (!string.Equals(Stage, "EXIT", StringComparison.OrdinalIgnoreCase) ||
+                    !_exitClearanceGranted || OnScale)
                 {
                     ExitBarrier = "CLOSED";
                     ExitSignal = "RED";
@@ -302,8 +328,10 @@ namespace FullStackSample.Services
             try { _exitAutoCloseCts?.Cancel(); _exitAutoCloseCts = null; } catch { }
             lock (_lock)
             {
-                // Only allow sequence-driven open when we are in EXIT stage
-                if (!string.Equals(Stage, "EXIT", StringComparison.OrdinalIgnoreCase))
+                // Only allow sequence-driven open after the active transaction has been
+                // persisted and its caller has explicitly granted exit clearance, and never while on scale.
+                if (!string.Equals(Stage, "EXIT", StringComparison.OrdinalIgnoreCase) ||
+                    !_exitClearanceGranted || OnScale)
                 {
                     ExitBarrier = "CLOSED";
                     ExitSignal = "RED";
@@ -329,6 +357,7 @@ namespace FullStackSample.Services
             lock (_lock)
             {
                 ExitBarrier = "CLOSED";
+                ExitSignal = "RED";
                 if (_currentWeighment != null)
                 {
                     _currentWeighment.ExitBarrierStatus = "CLOSED";
@@ -350,9 +379,8 @@ namespace FullStackSample.Services
 
             lock (_lock)
             {
-                // Safety: never open exit during ENTRY/WEIGHING stages
-                if (string.Equals(Stage, "ENTRY", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(Stage, "WEIGHING", StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(Stage, "EXIT", StringComparison.OrdinalIgnoreCase) ||
+                    !_exitClearanceGranted || OnScale)
                 {
                     ExitBarrier = "CLOSED";
                     ExitSignal = "RED";
@@ -457,11 +485,20 @@ namespace FullStackSample.Services
         }
 
         // API: complete weighment by id — opens exit barrier and schedules auto-close
-        public void CompleteWeighment(string weighmentId, double weightKg, int autoCloseSeconds)
+        public void CompleteWeighment(string weighmentId, double weightKg, int autoCloseSeconds, bool exitClearanceConfirmed = false)
         {
             if (string.IsNullOrEmpty(weighmentId)) return;
             lock (_lock)
             {
+                _exitClearanceGranted = exitClearanceConfirmed;
+                if (!_exitClearanceGranted)
+                {
+                    ExitBarrier = "CLOSED";
+                    ExitSignal = "RED";
+                    _ = BroadcastStateAsync();
+                    return;
+                }
+
                 // Set current weighment tracking
                 _currentWeighment = new WeighmentStatus
                 {
@@ -587,7 +624,9 @@ namespace FullStackSample.Services
             lock (_lock)
             {
                 if (string.Equals(signalName, "exit", StringComparison.OrdinalIgnoreCase))
-                    ExitSignal = value.ToUpperInvariant();
+                    ExitSignal = string.Equals(value, "GREEN", StringComparison.OrdinalIgnoreCase) && !_exitClearanceGranted
+                        ? "RED"
+                        : value.ToUpperInvariant();
                 else if (string.Equals(signalName, "entry", StringComparison.OrdinalIgnoreCase))
                     EntrySignal = value.ToUpperInvariant();
             }
@@ -648,6 +687,12 @@ namespace FullStackSample.Services
 
                         case "open_exit_barrier":
                             if (step.DelayMs.HasValue && step.DelayMs.Value > 0) await Task.Delay(step.DelayMs.Value);
+                            // Enforce rule: wait until truck leaves scale before opening!
+                            while (OnScale)
+                            {
+                                Console.WriteLine("[RunExitSequence] Truck is still on scale. Waiting for it to leave scale before opening exit barrier...");
+                                await Task.Delay(500);
+                            }
                             await OpenExitBarrierForSequenceAsync();
                             break;
 
@@ -666,11 +711,19 @@ namespace FullStackSample.Services
                         case "reset_state":
                             lock (_lock)
                             {
+                                _exitClearanceGranted = false;
                                 Stage = (step.Next ?? "IDLE").ToUpperInvariant();
                                 OnScale = false;
+                                EntrySignal = "RED";
+                                EntryBarrier = "CLOSED";
+                                ExitSignal = "RED";
+                                ExitBarrier = "CLOSED";
                                 CurrentTruckPlate = string.Empty;
                                 CurrentWeight = 0;
                                 LedMessage = "READY FOR NEXT VEHICLE";
+                                CurrentProcessStep = "Idle";
+                                OperatorMessage = "Idle";
+                                SystemStatus = "System Online";
                             }
                             await _hub.Clients.All.SendAsync("ExitAutoCloseTimerChanged", 0);
                             await BroadcastStateAsync();
@@ -775,7 +828,10 @@ namespace FullStackSample.Services
                     grossWeight = GrossWeight,
                     tareWeight = TareWeight,
                     netWeight = NetWeight,
+                    transactionNumber = TransactionNumber,
+                    approvalStatus = ApprovalStatus,
                     currentProcessStep = CurrentProcessStep,
+                    operatorMessage = string.IsNullOrEmpty(OperatorMessage) ? CurrentProcessStep : OperatorMessage,
                     systemStatus = SystemStatus,
                     liveCameraImage = LiveCameraImage,
                     anprCameraStatus = AnprCameraStatus
@@ -799,6 +855,9 @@ namespace FullStackSample.Services
                     // Also emit position sensor changes so UI can react
                     Console.WriteLine($"[DeviceService] Emitting OnScaleChanged: {OnScale}");
                     await _hub.Clients.All.SendAsync("OnScaleChanged", OnScale);
+                    await _hub.Clients.All.SendAsync("WeightChanged", new { current = CurrentWeight, gross = GrossWeight, tare = TareWeight, net = NetWeight });
+                    await _hub.Clients.All.SendAsync("CameraStatusChanged", new { status = AnprCameraStatus, image = LiveCameraImage });
+                    await _hub.Clients.All.SendAsync("TransactionStatusChanged", new { transactionNumber = TransactionNumber, approvalStatus = ApprovalStatus, processStep = CurrentProcessStep, systemStatus = SystemStatus });
 
                     // Emit a concise event message for stage changes so clients can react reliably
                     if (!string.IsNullOrEmpty(evt))
@@ -902,13 +961,22 @@ namespace FullStackSample.Services
                     // 1) READY state before truck arrives
                     lock (_lock)
                     {
-                        EntrySignal = "GREEN";
+                        if (isAccepted)
+                        {
+                            EntrySignal = "GREEN";
+                            EntryBarrier = "OPEN";
+                            LedMessage = "READY FOR VEHICLE";
+                        }
+                        else
+                        {
+                            EntrySignal = "RED";
+                            EntryBarrier = "CLOSED";
+                            LedMessage = "INVALID VEHICLE - ENTRY DENIED";
+                        }
                         ExitSignal = "RED";
-                        EntryBarrier = "OPEN";
                         ExitBarrier = "CLOSED";
                         CurrentTruckPlate = string.Empty;
                         CurrentWeight = 0;
-                        LedMessage = "READY FOR VEHICLE";
                     }
 
                     Console.WriteLine($"[ProcessVehicle] initial READY delay {_initialReadyMs}ms for plate={normalized}");
@@ -917,15 +985,92 @@ namespace FullStackSample.Services
                     Console.WriteLine($"[ProcessVehicle] isAccepted={isAccepted} for plate={normalized}");
                     if (!isAccepted)
                     {
-                        // Rejected quickly: ensure closed
+                        // Rejected: ensure closed, update statuses, broadcast and delay
                         lock (_lock)
                         {
+                            Stage = "INVALID";
                             EntrySignal = "RED";
                             EntryBarrier = "CLOSED";
-                            LedMessage = "VEHICLE REJECTED";
+                            ExitSignal = "RED";
+                            ExitBarrier = "CLOSED";
+                            CurrentTruckPlate = normalized;
+                            CurrentDriverName = "Unknown";
+                            CurrentCustomerName = "Unknown";
+                            CurrentMaterialName = "Unknown";
+                            CurrentDestination = "None";
+                            CurrentPurchaseOrder = "None";
+                            LiveCameraImage = "/assets/images/anpr_entry.svg";
+                            AnprCameraStatus = "Active (Unregistered)";
+                            CurrentProcessStep = "Vehicle Rejected";
+                            SystemStatus = "Vehicle Rejected";
+                            LedMessage = "INVALID VEHICLE - ENTRY DENIED";
+                            OperatorMessage = "INVALID VEHICLE";
+                            OnScale = false;
                         }
                         AddLog(new DeviceLogEntry { Plate = normalized, Status = "REJECTED", Timestamp = DateTime.UtcNow });
-                        Console.WriteLine($"[ProcessVehicle] Rejected plate={normalized}");
+                        await BroadcastStateAsync();
+                        await _hub.Clients.All.SendAsync("VehicleProcessed", new { plate = normalized, status = "REJECTED", reason = "Unregistered" });
+
+                        // Persist rejection to SQLite database
+                        try
+                        {
+                            using (var scope = _serviceProvider.CreateScope())
+                            {
+                                var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                                var transaction = new Transaction
+                                {
+                                    VehicleNumber = normalized,
+                                    TransactionNumber = $"TXN-REJ-{DateTime.UtcNow:yyyyMMddHHmmss}",
+                                    DriverName = "Unknown",
+                                    CustomerName = "Unknown",
+                                    MaterialName = "Unknown",
+                                    Destination = "None",
+                                    PurchaseOrder = "None",
+                                    GrossWeight = 0,
+                                    TareWeight = 0,
+                                    NetWeight = 0,
+                                    EntryTime = DateTime.Now,
+                                    ApprovalStatus = "REJECTED",
+                                    AnprResult = "INVALID",
+                                    OperatorName = "Entry ANPR",
+                                    Status = "REJECTED"
+                                };
+                                dbContext.Transactions.Add(transaction);
+                                dbContext.AuditLogs.Add(new AuditLog { Action = "CHECK_VEHICLE_REJECTED", Details = $"Vehicle check failed for {normalized}. Reason: Unregistered.", Timestamp = DateTime.Now });
+                                await dbContext.SaveChangesAsync();
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"[ProcessVehicle] Database write error: {ex.Message}");
+                        }
+
+                        // Delay 7 seconds, then reset to IDLE
+                        await Task.Delay(7000);
+
+                        lock (_lock)
+                        {
+                            Stage = "IDLE";
+                            EntrySignal = "RED";
+                            EntryBarrier = "CLOSED";
+                            ExitSignal = "RED";
+                            ExitBarrier = "CLOSED";
+                            CurrentTruckPlate = string.Empty;
+                            CurrentDriverName = string.Empty;
+                            CurrentCustomerName = string.Empty;
+                            CurrentMaterialName = string.Empty;
+                            CurrentDestination = string.Empty;
+                            CurrentPurchaseOrder = string.Empty;
+                            LiveCameraImage = string.Empty;
+                            AnprCameraStatus = "Ready";
+                            CurrentProcessStep = "Idle";
+                            OperatorMessage = "Idle";
+                            SystemStatus = "System Online";
+                            LedMessage = "NO LED MESSAGE";
+                            OnScale = false;
+                        }
+                        await BroadcastStateAsync();
+                        Console.WriteLine($"[ProcessVehicle] Rejected plate={normalized} reset completed");
                         return;
                     }
 
@@ -999,10 +1144,27 @@ namespace FullStackSample.Services
                     // small stabilization delay
                     await Task.Delay(1500);
 
+                    // 5) TRUCK LEAVES SCALE: moves off scale but stops at closed exit barrier
+                    lock (_lock)
+                    {
+                        OnScale = false;
+                        CurrentWeight = 0;
+                        CurrentProcessStep = "Truck leaves scale. Stopped at Exit Barrier.";
+                        SystemStatus = "Truck off scale - Exit Barrier Closed";
+                        LedMessage = "STOP AT BARRIER";
+                    }
+                    await BroadcastStateAsync();
+
+                    // Wait 2.0s for the truck to animate off the scale and position in front of the exit barrier
+                    await Task.Delay(2000);
+
+                    // 6) EXIT: trigger exit sequence (exit signal green and open exit barrier)
                     lock (_lock)
                     {
                         Stage = "EXIT";
                         LedMessage = "PROCEED TO EXIT";
+                        CurrentProcessStep = "Weight captured. Exit sequence running...";
+                        SystemStatus = "Exit sequence running";
                         _currentWeighment = new WeighmentStatus
                         {
                             WeighmentId = $"PROCESS-{normalized}-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}",

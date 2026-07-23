@@ -1,0 +1,4 @@
+
+> scada-app@0.0.0 start
+> ng serve --open --proxy-config proxy.conf.json --no-open
+

@@ -36,20 +36,48 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
-// Recreate database to ensure all new tables are created and seeded
+// Create the SQLite database once and preserve operational transactions across restarts.
 using (var scope = app.Services.CreateScope())
 {
     try
     {
         var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        context.Database.EnsureDeleted();
         context.Database.EnsureCreated();
+        EnsureTransactionColumn(context, "AnprResult", "TEXT NOT NULL DEFAULT ''");
+        EnsureTransactionColumn(context, "OperatorName", "TEXT NOT NULL DEFAULT 'System'");
+        EnsureTransactionColumn(context, "SlipGeneratedAt", "TEXT NULL");
+        EnsureTransactionColumn(context, "QrPayload", "TEXT NOT NULL DEFAULT ''");
         Console.WriteLine("Database successfully initialized and seeded.");
     }
     catch (Exception ex)
     {
         Console.WriteLine($"Error initializing database: {ex.Message}");
     }
+}
+
+static void EnsureTransactionColumn(AppDbContext context, string columnName, string definition)
+{
+    var connection = context.Database.GetDbConnection();
+    if (connection.State != System.Data.ConnectionState.Open) connection.Open();
+
+    using var inspect = connection.CreateCommand();
+    inspect.CommandText = "PRAGMA table_info('Transactions')";
+    using var reader = inspect.ExecuteReader();
+    var exists = false;
+    while (reader.Read())
+    {
+        if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+        {
+            exists = true;
+            break;
+        }
+    }
+    reader.Close();
+    if (exists) return;
+
+    using var alter = connection.CreateCommand();
+    alter.CommandText = $"ALTER TABLE Transactions ADD COLUMN {columnName} {definition}";
+    alter.ExecuteNonQuery();
 }
 
 // Enable serving default files (index.html) and static files for the frontend

@@ -11,7 +11,7 @@ import {
   AudioAnnouncementService,
   AudioAnnouncementState
 } from '../../services/audio-announcement.service';
-import { SignalState, BarrierState, WeighbridgeStatus, VehicleStatus } from '../../models/scada.models';
+import { SignalState, BarrierState, WeighbridgeStatus, VehicleStatus, VehicleState } from '../../models/scada.models';
 
 @Component({
   selector: 'app-scada-dashboard',
@@ -25,6 +25,15 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
   readonly BarrierState = BarrierState;
   readonly WeighbridgeStatus = WeighbridgeStatus;
   readonly VehicleStatus = VehicleStatus;
+
+  private readonly truckMotionDurations = {
+    approach: 2600,
+    barrierWait: 1200,
+    enter: 3200,
+    weighHold: 900,
+    exit: 3600,
+    reset: 2200
+  };
 
   intervalId: any;
   pollIntervalId: any;
@@ -42,6 +51,11 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
   manualWeight = 1500;
   currentPlate = '';
   currentTruckPlate = '';
+  transactionNumber = '';
+  approvalStatus = '';
+  entryTime = '';
+  exitTime = '';
+  operatorMessage = '';
   truckPosition = 0; // 0 = start, 50 = center, 100 = exit
   barrierEntry = BarrierState.CLOSED;
   barrierExit = BarrierState.CLOSED;
@@ -92,6 +106,35 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
   get currentTruckCount(): number {
     return this.displayVehicleNumber ? 1 : 0;
   }
+
+  formatWeight(value: number | undefined | null): string {
+    if (value === undefined || value === null) {
+      return '0.0';
+    }
+    if (value === 0) {
+      return '0.0';
+    }
+    if (value % 1 === 0) {
+      return value.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    }
+    return value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  get displayGrossWeight(): string {
+    return this.formatWeight(this.scadaService.grossWeight());
+  }
+
+  get displayTareWeight(): string {
+    return this.formatWeight(this.scadaService.tareWeight());
+  }
+
+  get displayNetWeight(): string {
+    const gross = this.scadaService.grossWeight() || 0;
+    const tare = this.scadaService.tareWeight() || 0;
+    const net = (gross > 0 && tare > 0) ? (gross - tare) : 0;
+    return this.formatWeight(net);
+  }
+
 
   get weighbridgeStatusMessage(): string {
     const step = (this.scadaService.currentProcessStep() || '').toLowerCase();
@@ -150,19 +193,6 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
     try {
       if ((this.scadaService as any).hubConnection) {
         this.registerAudioSignalRHandlers();
-        (this.scadaService as any).hubConnection.on('ReceiveSystemStatus', (data: any) => {
-          try {
-            console.log('STATE UPDATE:', data);
-            this.entrySignal = data.entrySignal || this.entrySignal;
-            this.exitSignal = data.exitSignal || this.exitSignal;
-            this.barrierEntry = data.entryBarrier || this.barrierEntry;
-            this.barrierExit = data.exitBarrier || this.barrierExit;
-            this.weight = data.currentWeight || 0;
-            this.currentTruckPlate = data.currentTruckPlate || '';
-            this.ledMessage = data.ledMessage || '';
-            this.cameraImageFailed = false;
-          } catch (e) { console.warn('ReceiveSystemStatus handler failed', e); }
-        });
       }
     } catch (e) { }
   }
@@ -212,9 +242,13 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
       // When vehicle status changes, animate the truck to the target position
       if (vs !== this.lastVehicleStatus) {
         this.handleVehicleStatusAnnouncement(vs);
-        if (vs === VehicleStatus.EXITED) this.animateTruckTo(100);
-        else if (vs === VehicleStatus.POSITIONING || vs === VehicleStatus.WEIGHING || vs === VehicleStatus.READY || vs === VehicleStatus.VALIDATED || vs === VehicleStatus.ARRIVED) this.animateTruckTo(50);
-        else this.animateTruckTo(0);
+        if (vs === VehicleStatus.ARRIVED) this.animateTruckTo(18, this.truckMotionDurations.approach);
+        else if (vs === VehicleStatus.VALIDATED) this.animateTruckTo(18, this.truckMotionDurations.barrierWait);
+        else if (vs === VehicleStatus.POSITIONING) this.animateTruckTo(50, this.truckMotionDurations.enter);
+        else if (vs === VehicleStatus.READY || vs === VehicleStatus.WEIGHING) this.animateTruckTo(50, this.truckMotionDurations.weighHold);
+        else if (vs === VehicleStatus.LEAVING_SCALE) this.animateTruckTo(75, 1800);
+        else if (vs === VehicleStatus.EXITED) this.animateTruckTo(100, 1800);
+        else this.animateTruckTo(0, this.truckMotionDurations.reset);
         this.lastVehicleStatus = vs;
       }
 
@@ -222,6 +256,11 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
       const xb = this.scadaService.exitBarrier();
       this.barrierEntry = eb.state;
       this.barrierExit = xb.state;
+
+      const es = this.scadaService.entrySignal();
+      const xs = this.scadaService.exitSignal();
+      this.entrySignal = es.state === SignalState.GREEN ? 'GREEN' : 'RED';
+      this.exitSignal = xs.state === SignalState.GREEN ? 'GREEN' : 'RED';
 
       const wb = this.scadaService.weighbridge();
       // animate displayed weight toward service weight
@@ -234,18 +273,15 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
       const pa = this.scadaService.paSystem();
       this.paMessage = pa?.message || '';
 
+      this.currentTruckPlate = this.scadaService.currentTruckPlate() || '';
+      this.transactionNumber = this.scadaService.transactionNumber() || '';
+      this.approvalStatus = this.scadaService.approvalStatus() || '';
+      this.entryTime = this.scadaService.entryTime() || '';
+      this.exitTime = this.scadaService.exitTime() || '';
+      this.operatorMessage = this.scadaService.operatorMessage() || this.scadaService.currentProcessStep() || '';
+
       this.vehicleStatusText = vs;
       this.handlePostWeighExitDriveOff();
-      // If exit barrier is open and truck is near exit, trigger exit detection (simulate sensor)
-      try {
-        if (this.barrierExit === BarrierState.OPEN && this.truckPosition >= 80) {
-          // only trigger once per approach
-          if (this.scadaService && (this.scadaService as any).awaitingExitPass) {
-            // call simulateExitVehicleDetection to notify backend via ScadaService
-            try { this.scadaService.simulateExitVehicleDetection(); } catch (e) { }
-          }
-        }
-      } catch (e) { }
     } catch (e) {
       // ignore transient read errors
     }
@@ -254,20 +290,20 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
   private handlePostWeighExitDriveOff(): void {
     const exitOpen = this.barrierExit === BarrierState.OPEN;
     const step = (this.scadaService.currentProcessStep() || '').toLowerCase();
-    const postWeigh = step.includes('in completed') || step.includes('proceed to exit') || step.includes('exit barrier');
+    const postWeigh = step.includes('in completed') || step.includes('proceed to exit') || step.includes('exit barrier') || step.includes('exiting weighbridge');
 
-    if (exitOpen && !this.lastExitBarrierWasOpen && postWeigh && !this.exitDriveOffPending) {
+    if (exitOpen && (this.scadaService as any).backendExitSequenceActive && !this.lastExitBarrierWasOpen && postWeigh && !this.exitDriveOffPending) {
       this.exitDriveOffPending = true;
       this.scadaService.currentProcessStep.set('Exit barrier open. Truck exiting weighbridge...');
-      this.animateTruckTo(100);
+      this.animateTruckTo(100, 1800);
       setTimeout(() => {
         this.scadaService.notifyVehiclePassed();
         this.vehicleStatusText = VehicleStatus.EXITED;
         setTimeout(() => {
-          this.animateTruckTo(0);
+          this.animateTruckTo(0, this.truckMotionDurations.reset);
           this.exitDriveOffPending = false;
-        }, 1500);
-      }, 2200);
+        }, 1800);
+      }, 1800);
     }
 
     if (!exitOpen) {
@@ -297,6 +333,9 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
       case VehicleStatus.EXITED:
         this.announce('ExitApproved');
         break;
+      case VehicleStatus.INVALID:
+        this.announce('VehicleRejected');
+        break;
     }
   }
 
@@ -321,7 +360,8 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
       TruckMisaligned: 'TruckMisaligned',
       TruckAligned: 'TruckAligned',
       WeightCaptured: 'WeightCaptured',
-      ExitApproved: 'ExitApproved'
+      ExitApproved: 'ExitApproved',
+      VehicleRejected: 'VehicleRejected'
     };
 
     Object.keys(eventMap).forEach((signalREvent) => {
@@ -363,7 +403,7 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
     if (eventName === 'EXIT_OPEN') this.announce('ExitApproved');
   }
 
-  private animateTruckTo(targetPercent: number, duration = 900) {
+  private animateTruckTo(targetPercent: number, duration = 2200) {
     if (this.animFrame) cancelAnimationFrame(this.animFrame);
     const start = performance.now();
     const from = this.truckPosition;
@@ -434,15 +474,70 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
 
   private applyDashboardPayload(data: any): void {
     if (!data) return;
-    this.entrySignal = data.entrySignal || this.entrySignal;
-    this.exitSignal = data.exitSignal || this.exitSignal;
-    this.barrierEntry = (data.entryBoomBarrier || data.entryBarrier || this.barrierEntry) === 'OPEN' ? BarrierState.OPEN : BarrierState.CLOSED;
-    this.barrierExit = (data.exitBoomBarrier || data.exitBarrier || this.barrierExit) === 'OPEN' ? BarrierState.OPEN : BarrierState.CLOSED;
-    this.currentTruckPlate = data.vehicleNumber || data.currentTruckPlate || this.currentTruckPlate;
-    this.weight = data.grossWeight ?? data.currentWeight ?? this.weight;
-    if (data.truckPosition != null) {
-      this.truckPosition = data.truckPosition >= 50 ? 50 : 0;
+    
+    // Update the service signals and state variables to maintain a single source of truth
+    const es = (data.entrySignal || '').toString().toUpperCase();
+    const xs = (data.exitSignal || '').toString().toUpperCase();
+    this.scadaService.entrySignal.set({ id: 'entry-signal', name: 'Entry Signal', state: es === 'GREEN' ? SignalState.GREEN : SignalState.RED });
+    this.scadaService.exitSignal.set({ id: 'exit-signal', name: 'Exit Signal', state: xs === 'GREEN' ? SignalState.GREEN : SignalState.RED });
+
+    const eb = (data.entryBoomBarrier || data.entryBarrier || '').toString().toUpperCase();
+    const xb = (data.exitBoomBarrier || data.exitBarrier || '').toString().toUpperCase();
+    this.scadaService.entryBarrier.set({ id: 'entry-barrier', name: 'Entry Barrier', state: eb === 'OPEN' ? BarrierState.OPEN : BarrierState.CLOSED });
+    this.scadaService.exitBarrier.set({ id: 'exit-barrier', name: 'Exit Barrier', state: xb === 'OPEN' ? BarrierState.OPEN : BarrierState.CLOSED });
+
+    this.scadaService.truckOnScale = !!data.onScale;
+    this.scadaService.currentTruckPlate.set(data.vehicleNumber || data.currentTruckPlate || '');
+    this.scadaService.transactionNumber.set(data.transactionNumber || '');
+    this.scadaService.approvalStatus.set(data.approvalStatus || '');
+    this.scadaService.entryTime.set(data.entryTime || '');
+    this.scadaService.exitTime.set(data.exitTime || '');
+    this.scadaService.operatorMessage.set(data.operatorMessage || data.currentProcessStep || '');
+    
+    const w = data.grossWeight ?? data.currentWeight ?? 0;
+    this.scadaService.weighbridge.update(s => ({ ...s, weight: w, vehicleDetected: !!data.onScale }));
+    if (data.grossWeight !== undefined) this.scadaService.grossWeight.set(data.grossWeight || 0);
+    if (data.tareWeight !== undefined) this.scadaService.tareWeight.set(data.tareWeight || 0);
+    if (data.netWeight !== undefined) this.scadaService.netWeight.set(data.netWeight || 0);
+
+    // Update central state machine stage
+    const stage = (data.stage || '').toUpperCase();
+    if (stage === 'ARRIVED') {
+      this.scadaService.vehicleValidated = true;
+      this.scadaService.weightStable = false;
+      this.scadaService.readyForExit = false;
+      this.scadaService.currentVehicleState = VehicleState.ENTRY_GRANTED;
+    } else if (stage === 'ENTRY') {
+      this.scadaService.vehicleValidated = true;
+      this.scadaService.weightStable = false;
+      this.scadaService.readyForExit = false;
+      this.scadaService.currentVehicleState = VehicleState.ENTERING;
+    } else if (stage === 'WEIGHING') {
+      this.scadaService.vehicleValidated = true;
+      this.scadaService.weightStable = false;
+      this.scadaService.readyForExit = false;
+      this.scadaService.currentVehicleState = data.onScale ? VehicleState.WEIGHING : VehicleState.ON_SCALE;
+    } else if (stage === 'WEIGHT_CALCULATED' || stage === 'WEIGH_COMPLETED') {
+      this.scadaService.vehicleValidated = true;
+      this.scadaService.weightStable = true;
+      this.scadaService.readyForExit = false;
+      this.scadaService.currentVehicleState = VehicleState.WEIGHT_COMPLETE;
+    } else if (stage === 'EXIT' || stage === 'EXIT_IN_PROGRESS') {
+      this.scadaService.vehicleValidated = true;
+      this.scadaService.weightStable = true;
+      this.scadaService.readyForExit = true;
+      this.scadaService.currentVehicleState = !data.onScale ? VehicleState.EXITING : VehicleState.READY_FOR_EXIT;
+    } else if (stage === 'INVALID') {
+      this.scadaService.vehicleValidated = false;
+      this.scadaService.currentVehicleState = VehicleState.REJECTED;
+    } else if (stage === 'IDLE') {
+      this.scadaService.vehicleValidated = false;
+      this.scadaService.weightStable = false;
+      this.scadaService.readyForExit = false;
+      this.scadaService.currentVehicleState = VehicleState.IDLE;
     }
+
+    this.scadaService.updateSystemState(w, data.ledMessage);
   }
 
   // UI actions delegate to backend REST APIs
@@ -508,12 +603,9 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
       // ➡️ WEIGHBRIDGE OUT FLOW
       this.scadaService.weighOut(plate, weight).subscribe({
         next: (res: any) => {
-          this.animateTruckTo(100);
-          setTimeout(() => {
-            this.animateTruckTo(0);
-            this.loadLogs();
-            this.loadSystemStatus();
-          }, 3000);
+          this.loadLogs();
+          this.loadSystemStatus();
+          this.loadDashboardStatus();
         },
         error: (err: any) => {
           console.error("Weigh Out failed", err);
@@ -527,7 +619,7 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
             this.currentTruckPlate = res.vehicleNumber || plate;
             this.currentPlate = this.currentTruckPlate;
             // Animate truck onto the weighbridge platform
-            this.animateTruckTo(50);
+            this.animateTruckTo(50, this.truckMotionDurations.enter);
             setTimeout(() => {
               // Call weighIn once truck stops on scale
               this.scadaService.weighIn(plate, weight).subscribe({
@@ -578,8 +670,8 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
         }
 
         // Move truck from gate to weighbridge (Step 5)
-        this.animateTruckTo(50);
-        await new Promise(r => setTimeout(r, 2500));
+        this.animateTruckTo(50, this.truckMotionDurations.enter);
+        await new Promise(r => setTimeout(r, 3600));
 
         // Capture Gross Weight (Step 6)
         const grossWeight = Math.floor(24000 + Math.random() * 6000);
@@ -637,12 +729,30 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
     this.scadaService.getSystemStatus().subscribe({
       next: (s: any) => {
         try {
-          this.entrySignal = s.entrySignal || 'RED';
-          this.exitSignal = s.exitSignal || 'RED';
-          this.barrierEntry = s.entryBarrier || BarrierState.CLOSED;
-          this.barrierExit = s.exitBarrier || BarrierState.CLOSED;
-          this.currentPlate = s.currentTruckPlate || '';
-          this.weight = s.currentWeight || 0;
+          if (!s) return;
+          const es = s.entrySignal || 'RED';
+          const xs = s.exitSignal || 'RED';
+          this.scadaService.entrySignal.set({ id: 'entry-signal', name: 'Entry Signal', state: es === 'GREEN' ? SignalState.GREEN : SignalState.RED });
+          this.scadaService.exitSignal.set({ id: 'exit-signal', name: 'Exit Signal', state: xs === 'GREEN' ? SignalState.GREEN : SignalState.RED });
+
+          const eb = s.entryBarrier || BarrierState.CLOSED;
+          const xb = s.exitBarrier || BarrierState.CLOSED;
+          this.scadaService.entryBarrier.set({ id: 'entry-barrier', name: 'Entry Barrier', state: eb === 'OPEN' ? BarrierState.OPEN : BarrierState.CLOSED });
+          this.scadaService.exitBarrier.set({ id: 'exit-barrier', name: 'Exit Barrier', state: xb === 'OPEN' ? BarrierState.OPEN : BarrierState.CLOSED });
+
+          this.scadaService.currentTruckPlate.set(s.currentTruckPlate || '');
+          this.scadaService.transactionNumber.set(s.transactionNumber || '');
+          this.scadaService.approvalStatus.set(s.approvalStatus || '');
+          this.scadaService.entryTime.set(s.entryTime || '');
+          this.scadaService.exitTime.set(s.exitTime || '');
+          this.scadaService.operatorMessage.set(s.operatorMessage || s.currentProcessStep || '');
+
+          this.scadaService.weighbridge.update(w => ({ ...w, weight: s.currentWeight || 0, vehicleDetected: !!s.onScale }));
+          if (s.grossWeight !== undefined) this.scadaService.grossWeight.set(s.grossWeight || 0);
+          if (s.tareWeight !== undefined) this.scadaService.tareWeight.set(s.tareWeight || 0);
+          if (s.netWeight !== undefined) this.scadaService.netWeight.set(s.netWeight || 0);
+          
+          this.scadaService.updateSystemState(s.currentWeight || 0, s.ledMessage);
         } catch (e) {
           console.warn('loadSystemStatus parse error', e);
         }
@@ -786,17 +896,24 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
     this.scadaService.getSystemStatus().subscribe({
       next: (data: any) => {
         try {
-          // SIGNAL
-          this.entrySignal = data.entrySignal || 'RED';
-          this.exitSignal = data.exitSignal || 'RED';
+          if (!data) return;
+          const es = data.entrySignal || 'RED';
+          const xs = data.exitSignal || 'RED';
+          this.scadaService.entrySignal.set({ id: 'entry-signal', name: 'Entry Signal', state: es === 'GREEN' ? SignalState.GREEN : SignalState.RED });
+          this.scadaService.exitSignal.set({ id: 'exit-signal', name: 'Exit Signal', state: xs === 'GREEN' ? SignalState.GREEN : SignalState.RED });
 
-          // BARRIERS
-          this.barrierEntry = data.entryBarrier || BarrierState.CLOSED;
-          this.barrierExit = data.exitBarrier || BarrierState.CLOSED;
+          const eb = data.entryBarrier || BarrierState.CLOSED;
+          const xb = data.exitBarrier || BarrierState.CLOSED;
+          this.scadaService.entryBarrier.set({ id: 'entry-barrier', name: 'Entry Barrier', state: eb === 'OPEN' ? BarrierState.OPEN : BarrierState.CLOSED });
+          this.scadaService.exitBarrier.set({ id: 'exit-barrier', name: 'Exit Barrier', state: xb === 'OPEN' ? BarrierState.OPEN : BarrierState.CLOSED });
 
-          // WEIGHT & TRUCK
-          this.weight = data.currentWeight || 0;
-          this.currentPlate = data.currentTruckPlate || '';
+          this.scadaService.weighbridge.update(w => ({ ...w, weight: data.currentWeight || 0, vehicleDetected: !!data.onScale }));
+          this.scadaService.currentTruckPlate.set(data.currentTruckPlate || '');
+          if (data.grossWeight !== undefined) this.scadaService.grossWeight.set(data.grossWeight || 0);
+          if (data.tareWeight !== undefined) this.scadaService.tareWeight.set(data.tareWeight || 0);
+          if (data.netWeight !== undefined) this.scadaService.netWeight.set(data.netWeight || 0);
+          
+          this.scadaService.updateSystemState(data.currentWeight || 0, data.ledMessage);
         } catch (e) { console.warn('loadControl parse error', e); }
       },
       error: (err: any) => { console.warn('loadControl error', err); }
@@ -820,7 +937,7 @@ export class ScadaDashboardComponent implements OnInit, OnDestroy {
 
   setGreenSignal(): void { this.scadaService.setEntrySignal(SignalState.GREEN); }
   setRedSignal(): void { this.scadaService.setEntrySignal(SignalState.RED); }
-  moveTruck(): void { this.animateTruckTo(100); }
+  moveTruck(): void { this.animateTruckTo(100, this.truckMotionDurations.exit); }
 
   // Optional integrations (kept thin wrappers)
   enablePolling(url: string) { if (url) this.scadaService.enablePolling(url); }

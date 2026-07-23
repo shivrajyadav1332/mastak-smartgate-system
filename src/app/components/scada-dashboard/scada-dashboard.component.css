@@ -97,6 +97,8 @@
 
 .barrier-controls {
   display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 0.75rem;
   margin-top: 0.5rem;
 }
@@ -752,7 +754,7 @@
   height: 60px;
   pointer-events: none;
   z-index: 30; /* keep below weighbridge */
-  transition: left 2s linear;
+  transition: none;
 }
 
 .demo-truck .truck-label {
@@ -799,7 +801,7 @@
 
 /* Phases */
 .demo-truck.truck-entering {
-  animation: drive-to-center 2500ms ease-in-out forwards;
+  animation: drive-to-entry-stop 3200ms ease-in-out forwards;
 }
 
 .demo-truck.truck-positioning {
@@ -809,13 +811,13 @@
 }
 
 .demo-truck.truck-exiting {
-  animation: drive-to-exit 2400ms ease-in-out forwards;
+  animation: drive-to-exit 3600ms ease-in-out forwards;
 }
 
-@keyframes drive-to-center {
+@keyframes drive-to-entry-stop {
   0% { left: -20%; }
-  60% { left: 42%; }
-  100% { left: 50%; transform: translate(-50%, -50%); }
+  55% { left: 12%; }
+  100% { left: 18%; }
 }
 
 @keyframes drive-to-exit {
